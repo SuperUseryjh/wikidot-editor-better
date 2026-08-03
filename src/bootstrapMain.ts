@@ -1,6 +1,6 @@
 import { loadMonaco, monacoLoading } from './monacoLoader';
-import { setupEditor, rollbackIfNeeded } from './editor';
-import { EDIT_TEXTAREA_ID } from './constants';
+import { clearMonacoError, setupEditor, rollbackIfNeeded, showMonacoError } from './editor';
+import { EDIT_TEXTAREA_ID, MONACO_RETRY_DELAYS } from './constants';
 import { log, logError } from './utils';
 
 /**
@@ -35,27 +35,58 @@ import { log, logError } from './utils';
         lastTick = now;
     }, 500);
 
-    let setupFailed = false;
     const handled = new WeakSet<HTMLTextAreaElement>();
+    const initializing = new WeakSet<HTMLTextAreaElement>();
+    const exhausted = new WeakSet<HTMLTextAreaElement>();
+    const attempts = new WeakMap<HTMLTextAreaElement, number>();
+
+    const retryManually = (textarea: HTMLTextAreaElement): void => {
+        exhausted.delete(textarea);
+        attempts.delete(textarea);
+        clearMonacoError(textarea);
+        void trySetup(textarea);
+    };
 
     const trySetup = async (textarea: HTMLTextAreaElement): Promise<void> => {
-        if (handled.has(textarea)) {
+        if (handled.has(textarea) || initializing.has(textarea) || exhausted.has(textarea)) {
             return;
         }
-        handled.add(textarea);
+        initializing.add(textarea);
         try {
             const monaco = await loadMonaco();
             await setupEditor(monaco, textarea);
+            handled.add(textarea);
+            attempts.delete(textarea);
+            exhausted.delete(textarea);
+            clearMonacoError(textarea);
         } catch (e) {
-            setupFailed = true;
             logError('初始化 Monaco 编辑器失败，已回退到原生编辑框:', e);
             rollbackIfNeeded();
+            const attempt = attempts.get(textarea) || 0;
+            attempts.set(textarea, attempt + 1);
+            const delay = MONACO_RETRY_DELAYS[attempt];
+            if (delay === undefined) {
+                exhausted.add(textarea);
+                showMonacoError(textarea, () => retryManually(textarea));
+                return;
+            }
+            window.setTimeout(() => {
+                if (
+                    textarea.isConnected &&
+                    document.getElementById(EDIT_TEXTAREA_ID) === textarea &&
+                    !handled.has(textarea)
+                ) {
+                    void trySetup(textarea);
+                }
+            }, delay);
+        } finally {
+            initializing.delete(textarea);
         }
     };
 
     const check = (): void => {
         const ta = document.getElementById(EDIT_TEXTAREA_ID) as HTMLTextAreaElement | null;
-        if (ta && !handled.has(ta)) {
+        if (ta && !handled.has(ta) && !exhausted.has(ta)) {
             void trySetup(ta);
         }
     };
@@ -78,9 +109,6 @@ import { log, logError } from './utils';
 
     // 若干秒后仍未接管编辑区，给出引导提示（避免误以为是脚本失效）
     window.setTimeout(() => {
-        if (setupFailed) {
-            return; // 已有明确的失败日志
-        }
         if (monacoLoading()) {
             log('Monaco 仍在加载中（CDN 下载/模块图较大），请稍候片刻…');
             return;

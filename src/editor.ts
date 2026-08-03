@@ -2,6 +2,7 @@ import {
     EDIT_TEXTAREA_ID,
     MONACO_CONTAINER_ID,
     MONACO_STATUS_ID,
+    MONACO_ERROR_ID,
     WIKIDOT_LANGUAGE_ID,
     FONT_SIZE_KEY,
     DEFAULT_FONT_SIZE,
@@ -49,6 +50,34 @@ function clampFontSize(size: number): number {
 function getFontSize(): number {
     const saved = parseInt(localStorage.getItem(FONT_SIZE_KEY) || '', 10);
     return isNaN(saved) ? DEFAULT_FONT_SIZE : clampFontSize(saved);
+}
+
+export function clearMonacoError(textarea: HTMLTextAreaElement): void {
+    textarea.parentElement?.querySelector(`#${MONACO_ERROR_ID}`)?.remove();
+}
+
+export function showMonacoError(textarea: HTMLTextAreaElement, onRetry: () => void): void {
+    clearMonacoError(textarea);
+    const error = document.createElement('div');
+    error.id = MONACO_ERROR_ID;
+    error.setAttribute('role', 'alert');
+    error.style.cssText = 'width:95%;box-sizing:border-box;margin:0 0 8px;padding:10px 12px;border:1px solid #d99;background:#fff7e6;color:#7a4a00;font:14px/1.5 sans-serif;';
+
+    const message = document.createElement('span');
+    message.textContent = 'Monaco 编辑器加载失败，已切换回原生编辑框。';
+    error.appendChild(message);
+
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = '重试加载 Monaco';
+    retry.style.cssText = 'margin-left:10px;padding:3px 8px;border:1px solid #b77;background:#fff;color:#7a4a00;cursor:pointer;';
+    retry.addEventListener('click', () => {
+        retry.disabled = true;
+        retry.textContent = '正在重试…';
+        onRetry();
+    }, { once: true });
+    error.appendChild(retry);
+    textarea.parentNode?.insertBefore(error, textarea);
 }
 
 /**
@@ -161,6 +190,7 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
     state.editor = editor;
     state.model = editor.getModel();
     state.ready = true;
+    state.editor.setScrollTop(state.shadowScrollTop);
 
     // 若 Monaco 加载期间 weditor 已往 textarea 写入内容，确保以最新值为准
     if (state.model.getValue() !== state.cachedValue) {
@@ -274,10 +304,14 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
     Object.defineProperty(textarea, 'scrollTop', {
         configurable: true,
         get() {
-            return state.shadowScrollTop;
+            return state.ready ? state.editor.getScrollTop() : state.shadowScrollTop;
         },
         set(v: number) {
-            state.shadowScrollTop = v;
+            const next = Number.isFinite(v) ? Math.max(0, v) : 0;
+            state.shadowScrollTop = next;
+            if (state.ready) {
+                state.editor.setScrollTop(next);
+            }
         },
     });
 
@@ -398,6 +432,10 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
             }
             if (originalScrollTop) {
                 Object.defineProperty(textarea, 'scrollTop', originalScrollTop as PropertyDescriptor);
+            }
+            const scrollTop = state.editor?.getScrollTop();
+            if (Number.isFinite(scrollTop)) {
+                textarea.scrollTop = Math.max(0, scrollTop);
             }
             textarea.focus = originalFocus;
             textarea.setSelectionRange = originalSetSelectionRange;

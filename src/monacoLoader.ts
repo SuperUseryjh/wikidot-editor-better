@@ -3,13 +3,10 @@ import { log, logError } from './utils';
 
 /**
  * Monaco 加载策略：
- * 首选：多个 AMD CDN 并行竞争，取最快者。实测 bootcdn/staticfile/fastly/jsdelivr
- * 在不同时刻各自成功过（可达性/速度互相波动），并行确保无论哪个快都能直接命中，
- * 不再单点等待超时。ESM 的 npmmirror 源因 files 服务对 .css 返回错误 MIME 而稳定失败，
- * 故不参与首选，ESM 仅作最后兜底。
+ * 并行探测多个 AMD CDN，随后仅初始化最快可用的单一路径，避免共享全局 AMD Loader 的配置竞争。
  */
 
-/** AMD 单文件 CDN（前 AMD_PRIMARY_COUNT 个进入首选并行竞争，其余按顺序兜底） */
+/** AMD 单文件 CDN（前 AMD_PRIMARY_COUNT 个并行探测，其余按顺序兜底） */
 const AMD_CDNS = [
     'https://cdn.bootcdn.net/ajax/libs/monaco-editor/0.52.2',
     'https://cdn.staticfile.net/monaco-editor/0.52.2',
@@ -18,7 +15,6 @@ const AMD_CDNS = [
     'https://unpkg.com/monaco-editor@0.52.2',
 ];
 
-/** 首选并行竞争的 AMD CDN 数量（其余进入串行兜底） */
 const AMD_PRIMARY_COUNT = 4;
 
 /** ESM 兜底源 */
@@ -28,8 +24,9 @@ const ESM_CDNS = [
     'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2',
 ];
 
-const AMD_TIMEOUT = 20000; // editor.main 约 5MB，下载受 CDN 链路速度波动，需给足时间；并行下由最快者胜出
+const AMD_TIMEOUT = 20000; // editor.main 约 5MB，下载受 CDN 链路速度波动，需给足时间
 const ESM_TIMEOUT = 45000; // ESM 模块图加载超时
+const AMD_PROBE_TIMEOUT = 5000;
 
 let monacoPromise: Promise<any> | null = null;
 let lastMode: 'amd' | 'esm' | null = null;
@@ -90,17 +87,24 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
     });
 }
 
-/** 多个 Promise 竞争，任一成功即返回（全部失败则抛错） */
-function firstSuccess<T>(promises: Promise<T>[], onFail: (e: unknown) => void): Promise<T> {
+async function probeAmdCdn(base: string): Promise<{ base: string; code: string }> {
+    const loaderUrl = `${base}/min/vs/loader.js`;
+    const resp = await withTimeout(fetch(loaderUrl), AMD_PROBE_TIMEOUT, `探测 ${loaderUrl}`);
+    if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+    }
+    return { base, code: await resp.text() };
+}
+
+function firstSuccess<T>(promises: Promise<T>[]): Promise<T> {
     return new Promise<T>((resolve, reject) => {
         let pending = promises.length;
         const errors: unknown[] = [];
-        for (const p of promises) {
-            p.then(resolve, (e) => {
-                errors.push(e);
-                onFail(e);
+        for (const promise of promises) {
+            promise.then(resolve, (error) => {
+                errors.push(error);
                 if (--pending === 0) {
-                    reject(new Error(errors.map((x) => (x as Error).message).join(' | ')));
+                    reject(new Error(errors.map((item) => (item as Error).message).join(' | ')));
                 }
             });
         }
@@ -168,8 +172,8 @@ async function tryLoadEsm(base: string): Promise<any> {
     return normalizeMonaco(mod);
 }
 
-/** AMD 方式：fetch loader 源码 + 独立作用域执行，模块加载时序可控 */
-async function tryLoadAmd(base: string): Promise<any> {
+/** AMD 方式：在已探测到 loader 源码后执行单路初始化 */
+async function tryLoadAmd(base: string, loaderCode?: string): Promise<any> {
     const loaderUrl = `${base}/min/vs/loader.js`;
 
     // 若全局已是可用的 Monaco AMD require，直接用
@@ -178,37 +182,29 @@ async function tryLoadAmd(base: string): Promise<any> {
         return loadAmdModules(base);
     }
 
-    // 获取 loader.js 源码
-    let code: string;
-    try {
-        const resp = await fetch(loaderUrl);
-        if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}`);
-        }
-        code = await resp.text();
-    } catch (e) {
+    let code = loaderCode;
+    if (!code) {
         // fetch 失败（网络/CORS），退化为同步 script 注入
-        log(`fetch loader.js 失败(${(e as Error).message})，改用 script 注入`);
         await injectScript(loaderUrl, true);
         if (!isMonacoRequire()) {
             throw new Error('script 注入后 require 仍不可用');
         }
         lastMode = 'amd';
         return loadAmdModules(base);
-    }
+    } else {
+        // 执行前强制清理全局 define/require（页面脚本可能已定义了"假 AMD"）
+        const diag = forceCleanGlobals();
+        log('清理全局 define/require →', diag);
 
-    // 执行前强制清理全局 define/require（页面脚本可能已定义了"假 AMD"）
-    const diag = forceCleanGlobals();
-    log('清理全局 define/require →', diag);
-
-    // 在独立函数作用域执行 loader.js（避免顶层 const 与全局冲突，可重复执行）
-    try {
-        // eslint-disable-next-line no-new-func
-        new Function(code).call(window);
-    } catch (e) {
-        // new Function 被 CSP 禁止时退化为 script 注入
-        logError('new Function 执行 loader.js 失败，改用 script 注入:', e);
-        await injectScript(loaderUrl, true);
+        // 在独立函数作用域执行 loader.js（避免顶层 const 与全局冲突，可重复执行）
+        try {
+            // eslint-disable-next-line no-new-func
+            new Function(code).call(window);
+        } catch (e) {
+            // new Function 被 CSP 禁止时退化为 script 注入
+            logError('new Function 执行 loader.js 失败，改用 script 注入:', e);
+            await injectScript(loaderUrl, true);
+        }
     }
 
     if (!isMonacoRequire()) {
@@ -274,7 +270,7 @@ function loadAmdModules(base: string): Promise<any> {
     );
 }
 
-/** 加载 Monaco Editor（结果缓存），多路径竞争 + 兜底 */
+/** 加载 Monaco Editor（结果缓存），多路径兜底 */
 export function loadMonaco(): Promise<any> {
     if (monacoPromise) {
         return monacoPromise;
@@ -294,32 +290,23 @@ async function doLoadMonaco(): Promise<any> {
         return loadAmdModules(AMD_CDNS[0]);
     }
 
-    // 首选：前 AMD_PRIMARY_COUNT 个 AMD CDN 并行竞争，取最快者。
-    // 实测 bootcdn/staticfile/fastly/jsdelivr 可达性与速度互相波动，谁快不确定，
-    // 并行确保直接命中，避免单点超时白等 + 串行兜底重复等待。
-    const primary: Promise<any>[] = [];
-    for (const base of AMD_CDNS.slice(0, AMD_PRIMARY_COUNT)) {
-        primary.push(
-            tryLoadAmd(base).then((m) => {
-                log(`Monaco ${MONACO_VERSION} 加载成功（AMD: ${base}）`);
-                return m;
-            })
-        );
-    }
+    const primary = AMD_CDNS.slice(0, AMD_PRIMARY_COUNT);
     try {
-        return await firstSuccess(primary, (e) => log('[加载] 首选路径失败（预期兜底）:', e));
+        const winner = await firstSuccess(primary.map(probeAmdCdn));
+        const monaco = await tryLoadAmd(winner.base, winner.code);
+        log(`Monaco ${MONACO_VERSION} 加载成功（AMD: ${winner.base}）`);
+        return monaco;
     } catch (e) {
-        log('[加载] 首选路径全部失败，进入兜底:', e);
+        logError('AMD 并行探测或首选初始化失败，进入串行兜底:', e);
     }
 
-    // 兜底：其余 AMD CDN（避免与首选重复）
-    for (const base of AMD_CDNS.slice(AMD_PRIMARY_COUNT)) {
+    for (const base of AMD_CDNS) {
         try {
             const monaco = await tryLoadAmd(base);
             log(`Monaco ${MONACO_VERSION} 加载成功（AMD: ${base}）`);
             return monaco;
         } catch (e) {
-            logError(`AMD 兜底失败（${base}）:`, e);
+            logError(`AMD 加载失败（${base}）:`, e);
         }
     }
 

@@ -3,4 +3,5 @@
 *.log
 /ref
 /origin-web
-package-lock.json
+/landing
+*.lock

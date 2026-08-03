@@ -6,6 +6,7 @@ import {
     USERSCRIPT_FILE_NAME,
 } from './constants';
 import { log, logError } from './utils';
+import { compareVersions } from './version';
 
 /**
  * 检查脚本更新（在注入器/隔离世界上下文运行）。
@@ -36,7 +37,6 @@ export function checkUpdate(): void {
     }
 
     log('正在检查更新…');
-    localStorage.setItem(LOCAL_STORAGE_LAST_CHECK_TIME, now.toString());
 
     const versionPath = isStandardVersion ? 'pub' : 'perv';
     const updateUrl = `${STATIC_BASE_URL}/${versionPath}/version.json`;
@@ -49,8 +49,17 @@ export function checkUpdate(): void {
             try {
                 const remotePackageJson = JSON.parse(response.responseText);
                 const remoteVersion = remotePackageJson.version;
+                const comparison = typeof remoteVersion === 'string'
+                    ? compareVersions(remoteVersion, currentScriptVersion)
+                    : null;
 
-                if (remoteVersion && remoteVersion !== currentScriptVersion) {
+                if (comparison === null) {
+                    throw new Error(`版本号格式无效: ${String(remoteVersion)}`);
+                }
+
+                localStorage.setItem(LOCAL_STORAGE_LAST_CHECK_TIME, now.toString());
+
+                if (comparison > 0) {
                     log(
                         `发现新版本！当前版本: ${currentScriptVersion}, 最新版本: ${remoteVersion}`
                     );
@@ -61,8 +70,10 @@ export function checkUpdate(): void {
                         timeout: 15000,
                         onclick: () => window.GM_openInTab?.(userScriptUrl, false),
                     });
-                } else {
+                } else if (comparison === 0) {
                     log('当前已是最新版本。');
+                } else {
+                    log(`远端版本 ${remoteVersion} 不高于当前版本 ${currentScriptVersion}，跳过更新。`);
                 }
             } catch (e) {
                 logError('解析更新信息失败:', e);

@@ -16,27 +16,24 @@ jobs:
     - name: 检出仓库
       uses: actions/checkout@v4
 
-    - name: 安装 Node.js
-      uses: actions/setup-node@v4
+    - name: 安装 Bun
+      uses: oven-sh/setup-bun@v2
       with:
-        node-version: '22'
+        bun-version: latest
 
     - name: 安装依赖
-      run: npm install
+      run: bun install
 
-    - name: 编译 TypeScript
-      run: npx tsc
+    - name: 运行单元测试
+      run: bun run test
 
     - name: 运行构建脚本
-      run: npm run build
-
-    - name: 组合油猴脚本
-      run: node scripts/generate-userscript.js
+      run: bun run build
 
     - name: 获取版本信息
       id: get_version
       run: |
-        FULL_VERSION=$(node -p "require('./package.json').version")
+        FULL_VERSION=$(bun -e "console.log(require('./package.json').version)")
         echo "full_version=$FULL_VERSION" >> $GITHUB_OUTPUT
         
         # 检查版本号是否符合 <数字>.<数字>.<数字> 的格式
@@ -68,8 +65,9 @@ jobs:
         fi
         gh release create "$FULL_VERSION" \
           ./dist/wikidot-editor-better.user.js \
+          --target "$GITHUB_SHA" \
           --title "Release $FULL_VERSION" \
-          --generate-notes \
+          --notes-file RELEASE_NOTES.md \
           $PRERELEASE_FLAG
 
     - name: 上传油猴脚本作为 Artifact

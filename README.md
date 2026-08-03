@@ -56,20 +56,21 @@ src/
 ├── types.ts           # 全局类型声明（Monaco、Tampermonkey API）
 └── utils.ts           # 工具函数
 scripts/
-├── bundle.js               # esbuild 打包 bootstrap / 注入器
-└── generate-userscript.js  # 拼接油猴元数据 + 产物
+├── bundle.ts               # esbuild 打包 bootstrap / 注入器
+└── generate-userscript.ts  # 拼接油猴元数据 + 产物
 .github/workflows/release.yml # 自动构建、发布 Release、推送静态仓库
 ```
 
 ## 发布与自动更新
 
-项目参考 `ref` 项目的发布流程，通过 GitHub Actions 自动化：
+项目参考 https://github.com/SuperUseryjh/sample-fetch 项目的发布流程，通过 GitHub Actions 自动化：
 
 - push 到任意分支触发构建；`main` 分支还会：
-  1. 用 `gh release create` 创建 GitHub Release（含脚本资产），预发布版本自动标记 `prerelease`
+  1. 用 `gh release create` 创建 GitHub Release（含脚本资产），预发布版本自动标记 `prerelease`；正文固定读取 `RELEASE_NOTES.md`
   2. 把脚本与 `package.json`（作为 `version.json`）推送到静态仓库 `SuperUseryjh/static` 的 `wikidot-editor-better/pub`（标准版本号）或 `wikidot-editor-better/perv`（预发布版本号）目录
   3. 静态站点 `static.yaoonion.fun` 托管上述文件，脚本端定期拉取 `version.json` 对比并提示更新
 - 非 `main` 分支仅上传构建产物为 Artifact
+- 发版时请与 `package.json` 的版本号一并更新 `RELEASE_NOTES.md`
 
 ### 仓库 Secret 配置
 
