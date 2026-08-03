@@ -1,0 +1,162 @@
+import { WIKIDOT_LANGUAGE_ID } from './constants';
+
+/**
+ * Wikidot 语法的基础高亮（Monarch tokenizer）
+ * 覆盖：标题 +/++/+++、粗体、斜体、删除线、下划线、[[...]] 模块、|| 表格、> 引用、@@ 原始文本等。
+ */
+export function registerWikidotLanguage(monaco: any): void {
+    monaco.languages.register({ id: WIKIDOT_LANGUAGE_ID });
+
+    monaco.languages.setMonarchTokensProvider(WIKIDOT_LANGUAGE_ID, {
+        ignoreCase: false,
+        comments: [{ line: '//' }],
+        brackets: [
+            { open: '[[', close: ']]', token: 'delimiter.bracket' },
+        ],
+        tokenizer: {
+            root: [
+                // 注释（模块内）
+                [/^\s*\/\/.*$/, 'comment'],
+                // CSS 模块 [[module CSS]]...[[/module]]：进入 CSS 高亮状态
+                // 注意：Monarch 编译会丢弃正则字面量的 flags（/i 无效），模块名用字符类显式写大小写
+                [/\[\[module\s+[cC][sS][sS]\s*\]\]/, { token: 'tag', next: '@css' }],
+                // html 模块 [[html]]...[[/html]]：进入 HTML 高亮状态
+                [/\[\[[hH][tT][mM][lL]\s*\]\]/, { token: 'tag', next: '@html' }],
+                // 标题 + ++ +++（无捕获组，避免 Monarch "groups 不匹配" 报错）
+                [/^\s*\+{1,6}\s/, 'keyword.heading'],
+                // 水平线
+                [/^-{4,}$/, 'keyword.hr'],
+                // 表格行
+                [/^\s*\|+/, 'keyword.table'],
+                [/\|\|/, 'keyword.table'],
+                // 引用
+                [/^\s*>+\s/, 'keyword.quote'],
+                // [[...]] 模块：打开 [[name]] 或闭合 [[/name]]，可带参数，完整匹配一对 ]]。
+                // (?!\[) 排除 [[[ 链接（交给下方 string.link）；[^\]]* 与 ] 互斥，
+                // 回溯是线性的，不会灾难回溯，且不会跨行。
+                [/\[\[(?!\[)[^\]]*\]\]/, 'tag'],
+                // 原始文本 @@ ... @@
+                [/@@/, 'keyword.raw'],
+                // 粗体/斜体：直接简单匹配。
+                // 注意：不能用带配对前瞻的写法（如 (\*\*)(?=(?:[^*]|(?!\1).)*\*\*)），
+                // 那是嵌套量词+重叠交替，对无配对标记的长行会产生灾难性回溯，
+                // 导致 Monaco 主线程 tokenize 卡死整页。
+                [/\*\*/, 'keyword.bold'],
+                [/(?<!\*)\*\*(?!\*)/, 'keyword.bold'],
+                // 斜体 //（行首 // 注释已在上方规则覆盖，这里匹配行中 //，避开 ///）
+                [/\/\/(?!\/)/, 'keyword.italic'],
+                // 删除线
+                [/\-\-/, 'keyword.strike'],
+                // 下划线
+                [/__/, 'keyword.underline'],
+                // 行内代码 {{{ }}}
+                [/\{\{\{/, 'keyword.code'],
+                [/\}\}\}/, 'keyword.code'],
+                // 链接 [http:// ... ] / [[[...]]]
+                [/\[https?:\/\/[^\s]+/, 'string.link'],
+                [/\[\[\[/, 'string.link'],
+                [/\]\]\]/, 'string.link'],
+                // 数字
+                [/\d+/, 'number'],
+            ],
+            // CSS 模块内部：[[module CSS]] ... [[/module]]
+            // 注意：Monarch 编译要求状态必须是纯数组（对象形式会抛 "not iterable"）
+            css: [
+                // 关闭标签：退出 CSS 状态（关键字大小写不敏感）
+                [/\[\[\/[mM][oO][dD][uU][lL][eE]\s*\]\]/, { token: 'tag', next: '@pop' }],
+                // 注释（可跨行）
+                [/\/\*/, 'comment', '@cssComment'],
+                // 十六进制颜色
+                [/#[0-9a-fA-F]{3,8}\b/, 'number.hex'],
+                // 类 / ID 选择器
+                [/[.#][a-zA-Z][\w-]*/, 'tag'],
+                // 元素选择器（后面跟 { 或 ,）
+                [/[a-zA-Z][\w-]*(?=\s*[,{])/, 'type'],
+                // 伪类 / 伪元素
+                [/::?[\w-]+/, 'keyword'],
+                // @media / @import 等（@@ 是 Monarch 的字面 @ 转义，否则 @ 会被当属性引用展开）
+                [/@@[\w-]+/, 'keyword.atrule'],
+                // 花括号
+                [/\{/, 'delimiter.bracket'],
+                [/\}/, 'delimiter.bracket'],
+                // 属性名（后面跟 :）
+                [/[a-zA-Z-]+(?=\s*:)/, 'attribute.name'],
+                [/:/, 'delimiter'],
+                [/;/, 'delimiter'],
+                // 数字 + 单位
+                [/\b\d+(?:\.\d+)?(?:px|em|rem|%|vh|vw|vmin|vmax|s|ms|deg|fr|pt|ex|ch)?\b/, 'number'],
+                // 字符串
+                [/"[^"]*"|'[^']*'/, 'string'],
+                // 值关键字
+                [/\b[a-zA-Z][\w-]*\b/, 'attribute.value'],
+            ],
+            cssComment: [
+                [/\*\//, 'comment', '@pop'],
+                [/[^/*]+/, 'comment'],
+                [/[/*]/, 'comment'],
+            ],
+            // HTML 模块内部：[[html]] ... [[/html]]
+            html: [
+                // 关闭标签：退出 HTML 状态（标签名大小写不敏感）
+                [/\[\[\/[hH][tT][mM][lL]\s*\]\]/, { token: 'tag', next: '@pop' }],
+                // 注释（可跨行）
+                [/<!--/, 'comment', '@htmlComment'],
+                // DOCTYPE
+                [/<!d[oO][cC][tT][yY][pP][eE][^>]*>/, 'keyword'],
+                // 内联 <script>：进入 script 状态并嵌入 javascript 语言（必须先于通用标签规则）
+                [/<script(?=[\s>])[^>]*>/, { token: 'tag', next: '@script', nextEmbedded: 'javascript' }],
+                // 内联 <style>：进入 style 状态并嵌入 css 语言（必须先于通用标签规则）
+                [/<style(?=[\s>])[^>]*>/, { token: 'tag', next: '@style', nextEmbedded: 'css' }],
+                // 开始 / 结束标签名
+                [/<\/?[a-zA-Z][\w-]*/, 'tag'],
+                // 标签闭合 > 或 />
+                [/\/?>/, 'tag'],
+                // 属性名（后面跟 =）
+                [/[a-zA-Z-]+(?=\s*=)/, 'attribute.name'],
+                [/=/, 'delimiter'],
+                // 属性值
+                [/"[^"]*"|'[^']*'/, 'string'],
+                // 字符实体
+                [/&[a-zA-Z#0-9]{2,8};/, 'constant.character.entity'],
+                // 数字
+                [/\d+/, 'number'],
+            ],
+            htmlComment: [
+                [/-->/, 'comment', '@pop'],
+                [/[^<-]+/, 'comment'],
+                [/[<-]/, 'comment'],
+            ],
+            // 内联 <script> 内容：由 javascript 语言 tokenize，
+            // 此状态只需提供带 nextEmbedded:"@pop" 的退出规则（Monarch 用它定位退出位置）
+            script: [
+                [/<\/script\s*>/, { token: 'tag', next: '@pop', nextEmbedded: '@pop' }],
+            ],
+            // 内联 <style> 内容：由 css 语言 tokenize
+            style: [
+                [/<\/style\s*>/, { token: 'tag', next: '@pop', nextEmbedded: '@pop' }],
+            ],
+        },
+    } as any);
+
+    // 高亮规则：让 [[...]] 等标签显示更醒目
+    monaco.languages.setLanguageConfiguration(WIKIDOT_LANGUAGE_ID, {
+        comments: { lineComment: '//' },
+        brackets: [['[[', ']]']],
+        autoClosingPairs: [
+            { open: '[[', close: ']]' },
+            { open: '{{{', close: '}}}' },
+            { open: '**', close: '**' },
+            { open: '//', close: '//' },
+            { open: "'", close: "'" },
+            { open: '(', close: ')' },
+        ],
+        surroundingPairs: [
+            { open: '[[', close: ']]' },
+            { open: '{{{', close: '}}}' },
+            { open: '**', close: '**' },
+            { open: '//', close: '//' },
+            { open: "'", close: "'" },
+            { open: '(', close: ')' },
+        ],
+    } as any);
+}

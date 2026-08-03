@@ -1,0 +1,100 @@
+import { loadMonaco, monacoLoading } from './monacoLoader';
+import { setupEditor, rollbackIfNeeded } from './editor';
+import { EDIT_TEXTAREA_ID } from './constants';
+import { log, logError } from './utils';
+
+/**
+ * 主世界引导脚本（bootstrap）。
+ * 由 src/main.ts 以 <script> 形式注入页面主世界执行，从而绕开 Tampermonkey
+ * 隔离世界对 Monaco AMD 模块加载（DOM script + 全局 define）与动态 import 的限制。
+ *
+ * 注意：本文件会被单独打包为自包含 IIFE，不要依赖任何注入器侧的全局状态。
+ */
+(async function () {
+    'use strict';
+
+    if ((window as any).__webWikidotMonacoBootstrapped) {
+        return; // 防止重复注入执行
+    }
+    (window as any).__webWikidotMonacoBootstrapped = true;
+
+    // 预热加载 Monaco：尽早开始下载
+    void loadMonaco().catch((e: unknown) => {
+        logError('Monaco 预热加载失败（编辑区出现时仍会重试）:', e);
+    });
+
+    // 看门狗：检测主线程阻塞。主线程卡死时本回调不会执行；
+    // 一旦恢复，会打印阻塞时长，用于定位"操作后卡死"发生在哪一步。
+    let lastTick = performance.now();
+    window.setInterval(() => {
+        const now = performance.now();
+        const gap = now - lastTick;
+        if (gap > 1000) {
+            logError(`[诊断] 主线程阻塞 ${Math.round(gap)}ms（阻塞期间事件循环停止）`);
+        }
+        lastTick = now;
+    }, 500);
+
+    let setupFailed = false;
+    const handled = new WeakSet<HTMLTextAreaElement>();
+
+    const trySetup = async (textarea: HTMLTextAreaElement): Promise<void> => {
+        if (handled.has(textarea)) {
+            return;
+        }
+        handled.add(textarea);
+        try {
+            const monaco = await loadMonaco();
+            await setupEditor(monaco, textarea);
+        } catch (e) {
+            setupFailed = true;
+            logError('初始化 Monaco 编辑器失败，已回退到原生编辑框:', e);
+            rollbackIfNeeded();
+        }
+    };
+
+    const check = (): void => {
+        const ta = document.getElementById(EDIT_TEXTAREA_ID) as HTMLTextAreaElement | null;
+        if (ta && !handled.has(ta)) {
+            void trySetup(ta);
+        }
+    };
+
+    // 直接访问 edit:true 页面时，textarea 可能已渲染完成
+    check();
+
+    // wikidot 的编辑表单通常由 AJAX 注入，持续监听并支持再次编辑。
+    // 节流：Monaco 接管后 DOM 变化频繁，避免每次变化都执行 check()
+    let lastCheck = 0;
+    const observer = new MutationObserver(() => {
+        const now = Date.now();
+        if (now - lastCheck < 500) {
+            return;
+        }
+        lastCheck = now;
+        check();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    // 若干秒后仍未接管编辑区，给出引导提示（避免误以为是脚本失效）
+    window.setTimeout(() => {
+        if (setupFailed) {
+            return; // 已有明确的失败日志
+        }
+        if (monacoLoading()) {
+            log('Monaco 仍在加载中（CDN 下载/模块图较大），请稍候片刻…');
+            return;
+        }
+        const isEditPage =
+            /edit[:/]?true/i.test(window.location.href) ||
+            /\/edit(\/|:)/i.test(window.location.pathname);
+        log(
+            `当前为${isEditPage ? '编辑页' : '查看页'}，尚未接管编辑区域。`,
+            '请点击页面上的“编辑”按钮，或直接访问',
+            `${window.location.origin}/edit:true/page:页面名`,
+            '打开编辑页后脚本会自动接管。'
+        );
+    }, 8000);
+
+    log('已启动（主世界），等待编辑区域出现…');
+})();

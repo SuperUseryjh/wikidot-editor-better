@@ -1,0 +1,113 @@
+name: 编译并发布油猴脚本
+
+on:
+  push:
+    branches:
+      - '**' # 允许所有分支触发
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 检出仓库
+      uses: actions/checkout@v4
+
+    - name: 安装 Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: 安装依赖
+      run: npm install
+
+    - name: 编译 TypeScript
+      run: npx tsc
+
+    - name: 运行构建脚本
+      run: npm run build
+
+    - name: 组合油猴脚本
+      run: node scripts/generate-userscript.js
+
+    - name: 获取版本信息
+      id: get_version
+      run: |
+        FULL_VERSION=$(node -p "require('./package.json').version")
+        echo "full_version=$FULL_VERSION" >> $GITHUB_OUTPUT
+        
+        # 检查版本号是否符合 <数字>.<数字>.<数字> 的格式
+        if [[ "$FULL_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          IS_STANDARD_VERSION="true"
+        else
+          IS_STANDARD_VERSION="false"
+        fi
+        echo "is_standard_version=$IS_STANDARD_VERSION" >> $GITHUB_OUTPUT
+
+        # 检查是否为预发布版本 (例如，包含字母或连字符)
+        if [[ "$FULL_VERSION" =~ [a-zA-Z-] ]]; then
+          IS_PRERELEASE="true"
+        else
+          IS_PRERELEASE="false"
+        fi
+        echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+
+    - name: 创建 GitHub Release
+      id: create_release
+      if: github.ref == 'refs/heads/main'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.outputs.full_version }}
+        release_name: Release ${{ steps.get_version.outputs.full_version }}
+        draft: false
+        prerelease: ${{ steps.get_version.outputs.is_prerelease }}
+
+    - name: 上传油猴脚本到 Release
+      if: github.ref == 'refs/heads/main'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/wikidot-editor-better.user.js
+        asset_name: wikidot-editor-better.user.js
+        asset_content_type: application/javascript
+
+    - name: 上传油猴脚本作为 Artifact
+      if: github.ref != 'refs/heads/main'
+      uses: actions/upload-artifact@v4
+      with:
+        name: wikidot_editor_better_script
+        path: ./dist/wikidot-editor-better.user.js
+
+    - name: 检出 static 仓库
+      if: github.ref == 'refs/heads/main'
+      uses: actions/checkout@v4
+      with:
+        repository: SuperUseryjh/static
+        token: ${{ secrets.STATIC_REPO_TOKEN }} # 需要在仓库设置中配置此 Secret
+        path: static_repo
+
+    - name: 推送文件到 static 仓库
+      if: github.ref == 'refs/heads/main'
+      run: |
+        cd static_repo
+        if [ "${{ steps.get_version.outputs.is_standard_version }}" == "true" ]; then
+          echo "标准版本号，推送到 pub 目录"
+          mkdir -p wikidot-editor-better/pub
+          cp ../dist/wikidot-editor-better.user.js wikidot-editor-better/pub/wikidot-editor-better.user.js
+          cp ../package.json wikidot-editor-better/pub/version.json
+        else
+          echo "非标准版本号，推送到 perv 目录"
+          mkdir -p wikidot-editor-better/perv
+          cp ../dist/wikidot-editor-better.user.js wikidot-editor-better/perv/wikidot-editor-better.user.js
+          cp ../package.json wikidot-editor-better/perv/version.json
+        fi
+        
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add .
+        git commit -m "Update wikidot-editor-better.user.js and version.json for ${{ steps.get_version.outputs.full_version }}"
+        git push

@@ -1,0 +1,37 @@
+{
+  "name": "wikidot-editor-better",
+  "version": "1.0.0-alpha1",
+  "description": "将 Wikidot 编辑器的 textarea 替换为 Monaco Editor 的油猴脚本",
+  "main": "dist/wikidot-editor-better.user.js",
+  "userscript": {
+    "name": "Wikidot Editor Better (Monaco)",
+    "namespace": "https://wikidot.com/",
+    "description": "将 Wikidot 页面的源代码编辑区域替换为 Monaco Editor，并保持原工具栏按钮、快捷键、表单提交全部可用。",
+    "author": "YaoOnion",
+    "match": [
+      "*://*.wikidot.com/*",
+      "*://wikidot.com/*"
+    ],
+    "grant": [
+      "GM_info",
+      "GM_xmlhttpRequest",
+      "GM_openInTab",
+      "GM_notification"
+    ],
+    "connect": [
+      "static.yaoonion.fun"
+    ],
+    "run-at": "document-start"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/bundle.js && node scripts/generate-userscript.js",
+    "dev": "tsc --watch"
+  },
+  "keywords": [],
+  "author": "YaoOnion",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "esbuild": "^0.20.0"
+  }
+}
