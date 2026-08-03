@@ -8,6 +8,9 @@ on:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    # GITHUB_TOKEN 需要写权限才能创建 Release / 上传资产
+    permissions:
+      contents: write
 
     steps:
     - name: 检出仓库
@@ -16,7 +19,7 @@ jobs:
     - name: 安装 Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '22'
 
     - name: 安装依赖
       run: npm install
@@ -52,28 +55,22 @@ jobs:
         fi
         echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
 
-    - name: 创建 GitHub Release
-      id: create_release
+    - name: 创建 GitHub Release 并上传脚本
       if: github.ref == 'refs/heads/main'
-      uses: actions/create-release@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.get_version.outputs.full_version }}
-        release_name: Release ${{ steps.get_version.outputs.full_version }}
-        draft: false
-        prerelease: ${{ steps.get_version.outputs.is_prerelease }}
-
-    - name: 上传油猴脚本到 Release
-      if: github.ref == 'refs/heads/main'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/wikidot-editor-better.user.js
-        asset_name: wikidot-editor-better.user.js
-        asset_content_type: application/javascript
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        FULL_VERSION: ${{ steps.get_version.outputs.full_version }}
+        IS_PRERELEASE: ${{ steps.get_version.outputs.is_prerelease }}
+      run: |
+        PRERELEASE_FLAG=""
+        if [ "$IS_PRERELEASE" == "true" ]; then
+          PRERELEASE_FLAG="--prerelease"
+        fi
+        gh release create "$FULL_VERSION" \
+          ./dist/wikidot-editor-better.user.js \
+          --title "Release $FULL_VERSION" \
+          --generate-notes \
+          $PRERELEASE_FLAG
 
     - name: 上传油猴脚本作为 Artifact
       if: github.ref != 'refs/heads/main'
