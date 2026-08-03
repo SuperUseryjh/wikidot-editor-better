@@ -30,6 +30,13 @@ jobs:
     - name: 运行构建脚本
       run: bun run build
 
+    - name: 检查 Release 信息
+      run: |
+        if [ ! -s RELEASE_NOTES.md ]; then
+          echo "RELEASE_NOTES.md 不存在或内容为空"
+          exit 1
+        fi
+
     - name: 获取版本信息
       id: get_version
       run: |
