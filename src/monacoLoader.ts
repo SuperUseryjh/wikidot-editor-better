@@ -1,6 +1,13 @@
 import { MONACO_VERSION } from './constants';
 import { log, logError } from './utils';
 
+type MonacoLoadStageListener = (stage: 'fallback') => void;
+let monacoLoadStageListener: MonacoLoadStageListener | null = null;
+
+export function setMonacoLoadStageListener(listener: MonacoLoadStageListener | null): void {
+    monacoLoadStageListener = listener;
+}
+
 /**
  * Monaco 加载策略：
  * 并行探测多个 AMD CDN，随后仅初始化最快可用的单一路径，避免共享全局 AMD Loader 的配置竞争。
@@ -30,10 +37,15 @@ const AMD_PROBE_TIMEOUT = 5000;
 
 let monacoPromise: Promise<any> | null = null;
 let lastMode: 'amd' | 'esm' | null = null;
+let monacoFallbackActive = false;
 
 /** 当前是否仍在尝试加载 Monaco（供外部提示用） */
 export function monacoLoading(): boolean {
     return monacoPromise !== null;
+}
+
+export function monacoFallbackLoading(): boolean {
+    return monacoFallbackActive;
 }
 
 /**
@@ -298,11 +310,14 @@ async function doLoadMonaco(): Promise<any> {
         return monaco;
     } catch (e) {
         logError('AMD 并行探测或首选初始化失败，进入串行兜底:', e);
+        monacoFallbackActive = true;
+        monacoLoadStageListener?.('fallback');
     }
 
     for (const base of AMD_CDNS) {
         try {
             const monaco = await tryLoadAmd(base);
+            monacoFallbackActive = false;
             log(`Monaco ${MONACO_VERSION} 加载成功（AMD: ${base}）`);
             return monaco;
         } catch (e) {
@@ -314,6 +329,7 @@ async function doLoadMonaco(): Promise<any> {
     for (const base of ESM_CDNS) {
         try {
             const monaco = await tryLoadEsm(base);
+            monacoFallbackActive = false;
             log(`Monaco ${MONACO_VERSION} 加载成功（ESM: ${base}）`);
             return monaco;
         } catch (e) {

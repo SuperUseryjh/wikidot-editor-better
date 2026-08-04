@@ -20,6 +20,9 @@ declare global {
         GM_openInTab?: (url: string, open_in_background?: boolean) => Window | null;
         GM_notification?: (details: GMNotificationDetails) => void;
         GM_info?: { script: { version: string } };
+        GM_getValue?: <T>(key: string, defaultValue: T) => T | Promise<T>;
+        GM_setValue?: <T>(key: string, value: T) => void | Promise<void>;
+        GM_registerMenuCommand?: (caption: string, commandFunc: () => void) => void;
     }
 }
 

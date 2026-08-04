@@ -8,6 +8,8 @@ export const EDIT_TEXTAREA_ID = 'edit-page-textarea';
 export const MONACO_CONTAINER_ID = 'wikidot-monaco-container';
 export const MONACO_STATUS_ID = 'wikidot-monaco-status';
 export const MONACO_ERROR_ID = 'wikidot-monaco-error';
+export const EDITOR_STYLE_ID = 'wikidot-monaco-style';
+export const EDITOR_CONFIG_KEY = 'wikidotEditorBetterConfig';
 export const MONACO_RETRY_DELAYS = [1000, 3000, 8000] as const;
 
 export const FONT_SIZE_KEY = 'wikidotMonacoFontSize';

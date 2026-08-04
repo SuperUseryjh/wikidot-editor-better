@@ -1,4 +1,4 @@
-import { loadMonaco, monacoLoading } from './monacoLoader';
+import { loadMonaco, monacoFallbackLoading, monacoLoading, setMonacoLoadStageListener } from './monacoLoader';
 import { clearMonacoError, setupEditor, rollbackIfNeeded, showMonacoError } from './editor';
 import { EDIT_TEXTAREA_ID, MONACO_RETRY_DELAYS } from './constants';
 import { log, logError } from './utils';
@@ -39,6 +39,46 @@ import { log, logError } from './utils';
     const initializing = new WeakSet<HTMLTextAreaElement>();
     const exhausted = new WeakSet<HTMLTextAreaElement>();
     const attempts = new WeakMap<HTMLTextAreaElement, number>();
+    let loadingFallbackDismissed = false;
+
+    const showLoadingFallback = (): void => {
+        if (loadingFallbackDismissed) {
+            return;
+        }
+        if (document.getElementById('wikidot-monaco-loading-fallback')) {
+            return;
+        }
+        const overlay = document.createElement('div');
+        overlay.id = 'wikidot-monaco-loading-fallback';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-labelledby', 'wikidot-monaco-loading-title');
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483646;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.45);font:14px/1.5 system-ui,sans-serif;';
+        const panel = document.createElement('section');
+        panel.style.cssText = 'width:min(400px,100%);box-sizing:border-box;padding:20px;border:1px solid #b9c7d8;border-radius:10px;background:#fff;color:#1e293b;box-shadow:0 16px 48px rgba(15,23,42,.28);';
+        const title = document.createElement('h2');
+        title.id = 'wikidot-monaco-loading-title';
+        title.textContent = 'Monaco Editor 加载较慢';
+        title.style.cssText = 'margin:0 0 10px;font-size:18px;';
+        const message = document.createElement('p');
+        message.textContent = '首选下载源未能及时完成，正在尝试备用源。原生编辑框仍可继续使用。';
+        message.style.cssText = 'margin:0 0 16px;';
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.textContent = '继续使用原生编辑框';
+        close.style.cssText = 'padding:7px 12px;border:1px solid #94a3b8;border-radius:6px;background:#fff;color:#334155;cursor:pointer;';
+        close.addEventListener('click', () => {
+            loadingFallbackDismissed = true;
+            overlay.remove();
+        });
+        panel.append(title, message, close);
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+    };
+
+    setMonacoLoadStageListener(() => {
+        showLoadingFallback();
+    });
 
     const retryManually = (textarea: HTMLTextAreaElement): void => {
         exhausted.delete(textarea);
@@ -55,6 +95,7 @@ import { log, logError } from './utils';
         try {
             const monaco = await loadMonaco();
             await setupEditor(monaco, textarea);
+            document.getElementById('wikidot-monaco-loading-fallback')?.remove();
             handled.add(textarea);
             attempts.delete(textarea);
             exhausted.delete(textarea);
@@ -87,6 +128,9 @@ import { log, logError } from './utils';
     const check = (): void => {
         const ta = document.getElementById(EDIT_TEXTAREA_ID) as HTMLTextAreaElement | null;
         if (ta && !handled.has(ta) && !exhausted.has(ta)) {
+            if (monacoFallbackLoading()) {
+                showLoadingFallback();
+            }
             void trySetup(ta);
         }
     };
