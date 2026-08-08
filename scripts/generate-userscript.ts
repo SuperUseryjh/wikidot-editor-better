@@ -1,5 +1,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { generateProjectPngIconDataUrl } from './generate-icon';
+
+const USE_PNG_GENERATE = 'USE_PNG_GENERATE';
 
 interface UserscriptMetadata {
     name: string;
@@ -10,6 +13,7 @@ interface UserscriptMetadata {
     require?: string[];
     grant?: string[];
     connect?: string[];
+    icon?: string;
     'run-at'?: string;
     'inject-into'?: string;
 }
@@ -24,6 +28,9 @@ const packageJson = await Bun.file(resolve(root, 'package.json')).json() as Pack
 const { userscript: metadata, version } = packageJson;
 const outputFile = resolve(root, 'dist/wikidot-editor-better.user.js');
 const bundledJsFile = resolve(root, 'dist/bundle.js');
+const icon = metadata.icon === USE_PNG_GENERATE
+    ? generateProjectPngIconDataUrl(root)
+    : metadata.icon;
 
 let metadataBlock = '// ==UserScript==\n';
 metadataBlock += `// @name         ${metadata.name}\n`;
@@ -34,6 +41,7 @@ metadataBlock += `// @author       ${metadata.author}\n`;
 
 if (metadata['run-at']) metadataBlock += `// @run-at      ${metadata['run-at']}\n`;
 if (metadata['inject-into']) metadataBlock += `// @inject-into ${metadata['inject-into']}\n`;
+if (icon) metadataBlock += `// @icon        ${icon}\n`;
 for (const item of metadata.match || []) metadataBlock += `// @match        ${item}\n`;
 for (const item of metadata.require || []) metadataBlock += `// @require      ${item}\n`;
 for (const item of metadata.grant || []) metadataBlock += `// @grant        ${item}\n`;

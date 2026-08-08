@@ -1,8 +1,31 @@
-# Wikidot Editor Better (Monaco) / FuckiDot Editor
+<p align="center">
+  <img src="./landing/assets/logo.svg" width="160" alt="Wikidot Editor Better logo">
+</p>
+
+<h1 align="center">Wikidot Editor Better</h1>
+
+<p align="center">
+  为 Wikidot 编辑页带来 Monaco Editor 体验的 Tampermonkey 用户脚本。
+</p>
+
+<p align="center">
+  <a href="https://github.com/SuperUseryjh/wikidot-editor-better/releases"><img src="https://img.shields.io/github/v/release/SuperUseryjh/wikidot-editor-better?display_name=tag&sort=semver&label=%E5%8F%91%E5%B8%83" alt="发布版本"></a>
+  <a href="https://github.com/SuperUseryjh/wikidot-editor-better/stargazers"><img src="https://img.shields.io/github/stars/SuperUseryjh/wikidot-editor-better?style=flat&label=Stars" alt="GitHub Stars"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-GPL%20v3.0-2dc8d8" alt="GPL v3.0"></a>
+  <a href="https://github.com/SuperUseryjh/wikidot-editor-better/actions"><img src="https://img.shields.io/github/actions/workflow/status/SuperUseryjh/wikidot-editor-better/release.yml?label=%E6%9E%84%E5%BB%BA" alt="构建状态"></a>
+</p>
+
+将 [Wikidot](https://www.wikidot.com/) 页面源代码编辑区域的 `textarea` 替换为 [Monaco Editor](https://microsoft.github.io/monaco-editor/)（VS Code 同款编辑器）的 Tampermonkey 油猴脚本。原工具栏按钮、快捷键、表单提交全部保持可用。
 
 将 [Wikidot](https://www.wikidot.com/) 页面源代码编辑区域的 `textarea` 替换为 [Monaco Editor](https://microsoft.github.io/monaco-editor/)（VS Code 同款编辑器）的 Tampermonkey 油猴脚本。原工具栏按钮、快捷键、表单提交全部保持可用。
 
 此项目又名 FuckiDot Editor。
+
+## 安装入口
+
+- [安装稳定版脚本](https://static.yaoonion.fun/wikidot-editor-better/pub/wikidot-editor-better.user.js)
+- [查看 GitHub Releases](https://github.com/SuperUseryjh/wikidot-editor-better/releases)
+- [报告问题或提出建议](https://github.com/SuperUseryjh/wikidot-editor-better/issues)
 
 ## 功能特性
 
@@ -57,6 +80,7 @@ src/
 └── utils.ts           # 工具函数
 scripts/
 ├── bundle.ts               # esbuild 打包 bootstrap / 注入器
+├── generate-icon.ts         # SVG logo 转 PNG Data URL
 └── generate-userscript.ts  # 拼接油猴元数据 + 产物
 .github/workflows/release.yml # 自动构建、发布 Release、推送静态仓库
 ```
@@ -88,3 +112,7 @@ scripts/
 ## License
 
 GNU GPL v3.0
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SuperUseryjh/wikidot-editor-better&type=Date)](https://www.star-history.com/#SuperUseryjh/wikidot-editor-better&Date)

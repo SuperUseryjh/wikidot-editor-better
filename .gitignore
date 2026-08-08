@@ -1,8 +1,4 @@
 /dist
 /node_modules
 *.log
-/ref
-/origin-web
 /landing
-*.lock
-/wikidot-webpage
