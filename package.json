@@ -1,6 +1,6 @@
 {
   "name": "wikidot-editor-better",
-  "version": "1.0.2-beta1",
+  "version": "1.0.2-beta2",
   "packageManager": "bun@1.2.0",
   "description": "将 Wikidot 编辑器的 textarea 替换为 Monaco Editor 的油猴脚本",
   "main": "dist/wikidot-editor-better.user.js",
