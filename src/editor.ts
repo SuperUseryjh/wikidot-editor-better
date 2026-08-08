@@ -610,13 +610,19 @@ function enhanceButtons(form: HTMLFormElement): () => void {
         toolbarObserver.observe(toolbar, { childList: true, subtree: true });
     }
 
-    const sizeIcons: SVGSVGElement[] = [];
+    const sizeIcons: Array<{
+        link: HTMLAnchorElement;
+        children: Node[];
+        ariaLabel: string | null;
+    }> = [];
     form.querySelectorAll<HTMLAnchorElement>('.change-textarea-size a').forEach((link) => {
         const icon = link.textContent?.trim() === '-' ? Minus : Plus;
+        const children = Array.from(link.childNodes, (node) => node.cloneNode(true));
+        const ariaLabel = link.getAttribute('aria-label');
         const svg = createIcon(icon, 'wikidot-monaco-toolbar-icon');
         link.replaceChildren(svg);
         link.setAttribute('aria-label', icon === Minus ? '减小字号' : '增大字号');
-        sizeIcons.push(svg);
+        sizeIcons.push({ link, children, ariaLabel });
     });
 
     const proxies: HTMLButtonElement[] = [];
@@ -668,7 +674,14 @@ function enhanceButtons(form: HTMLFormElement): () => void {
             link.style.removeProperty('--wm-toolbar-icon');
             link.classList.remove('wikidot-monaco-mask-icon');
         });
-        sizeIcons.forEach((icon) => icon.remove());
+        sizeIcons.forEach(({ link, children, ariaLabel }) => {
+            link.replaceChildren(...children);
+            if (ariaLabel === null) {
+                link.removeAttribute('aria-label');
+            } else {
+                link.setAttribute('aria-label', ariaLabel);
+            }
+        });
         proxies.forEach((button) => button.remove());
         nativeInputs.forEach((input) => input.classList.remove('wikidot-monaco-native-action'));
     };
@@ -1046,13 +1059,23 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
         editor.updateOptions({ fontSize: next });
         log(`字号已调整为 ${next}px`);
     };
+    const restoreFontSizeControls: Array<() => void> = [];
     form?.querySelectorAll<HTMLAnchorElement>('.change-textarea-size a').forEach((a) => {
         const onclick = a.getAttribute('onclick') || '';
         if (onclick.includes('changeTextareaRowNo')) {
             a.setAttribute('onclick', '');
-            a.addEventListener('click', (ev) => {
+            const onClick = (ev: MouseEvent) => {
                 ev.preventDefault();
                 changeFontSize(onclick.includes('-5') ? -1 : 1);
+            };
+            a.addEventListener('click', onClick);
+            restoreFontSizeControls.push(() => {
+                a.removeEventListener('click', onClick);
+                if (onclick) {
+                    a.setAttribute('onclick', onclick);
+                } else {
+                    a.removeAttribute('onclick');
+                }
             });
         }
     });
@@ -1063,6 +1086,7 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
         if (layoutTimer !== null) {
             window.clearTimeout(layoutTimer);
         }
+        restoreFontSizeControls.forEach((restoreControl) => restoreControl());
         try {
             if (originalValue) {
                 Object.defineProperty(textarea, 'value', originalValue as PropertyDescriptor);

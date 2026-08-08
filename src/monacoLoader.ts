@@ -38,10 +38,15 @@ const AMD_PROBE_TIMEOUT = 5000;
 let monacoPromise: Promise<any> | null = null;
 let lastMode: 'amd' | 'esm' | null = null;
 let monacoFallbackActive = false;
+let monacoLoadState: 'idle' | 'loading' | 'ready' = 'idle';
 
 /** 当前是否仍在尝试加载 Monaco（供外部提示用） */
 export function monacoLoading(): boolean {
-    return monacoPromise !== null;
+    return monacoLoadState === 'loading';
+}
+
+export function monacoReady(): boolean {
+    return monacoLoadState === 'ready';
 }
 
 export function monacoFallbackLoading(): boolean {
@@ -58,6 +63,10 @@ function isMonacoRequire(): boolean {
         typeof (window.require as any).config === 'function' &&
         typeof (window.require as any).define === 'function'
     );
+}
+
+function pageHasAmdGlobals(): boolean {
+    return typeof window.require === 'function' || typeof window.define === 'function';
 }
 
 /**
@@ -189,9 +198,8 @@ async function tryLoadAmd(base: string, loaderCode?: string): Promise<any> {
     const loaderUrl = `${base}/min/vs/loader.js`;
 
     // 若全局已是可用的 Monaco AMD require，直接用
-    if (isMonacoRequire()) {
-        lastMode = 'amd';
-        return loadAmdModules(base);
+    if (pageHasAmdGlobals()) {
+        throw new Error('Page already has an AMD loader; skipping Monaco AMD initialization');
     }
 
     let code = loaderCode;
@@ -205,9 +213,6 @@ async function tryLoadAmd(base: string, loaderCode?: string): Promise<any> {
         return loadAmdModules(base);
     } else {
         // 执行前强制清理全局 define/require（页面脚本可能已定义了"假 AMD"）
-        const diag = forceCleanGlobals();
-        log('清理全局 define/require →', diag);
-
         // 在独立函数作用域执行 loader.js（避免顶层 const 与全局冲突，可重复执行）
         try {
             // eslint-disable-next-line no-new-func
@@ -287,8 +292,14 @@ export function loadMonaco(): Promise<any> {
     if (monacoPromise) {
         return monacoPromise;
     }
-    monacoPromise = doLoadMonaco().catch((err) => {
+    monacoLoadState = 'loading';
+    monacoPromise = doLoadMonaco().then((monaco) => {
+        monacoLoadState = 'ready';
+        return monaco;
+    }).catch((err) => {
         monacoPromise = null; // 允许下次重试
+        monacoLoadState = 'idle';
+        monacoFallbackActive = false;
         throw err;
     });
     return monacoPromise;
@@ -298,8 +309,22 @@ async function doLoadMonaco(): Promise<any> {
     log('准备加载 Monaco…');
 
     // 若此前已成功初始化过 AMD loader，直接复用
-    if (isMonacoRequire() && lastMode === 'amd') {
-        return loadAmdModules(AMD_CDNS[0]);
+    if (window.monaco?.editor) {
+        return normalizeMonaco(window.monaco);
+    }
+    if (pageHasAmdGlobals()) {
+        monacoFallbackActive = true;
+        monacoLoadStageListener?.('fallback');
+        for (const base of ESM_CDNS) {
+            try {
+                const monaco = await tryLoadEsm(base);
+                monacoFallbackActive = false;
+                return monaco;
+            } catch (e) {
+                logError(`ESM load failed (${base}):`, e);
+            }
+        }
+        throw new Error('Page already has an AMD loader and all ESM Monaco CDNs failed');
     }
 
     const primary = AMD_CDNS.slice(0, AMD_PRIMARY_COUNT);
