@@ -10,6 +10,105 @@ const DEFAULT_CONFIG: EditorBetterConfig = {
     editorOverrideEnabled: true,
 };
 
+const INCLUDE_REQUEST_EVENT = 'wikidot-editor-better-include-request';
+const INCLUDE_RESPONSE_EVENT = 'wikidot-editor-better-include-response';
+const MAX_INCLUDE_RESPONSE_LENGTH = 1_500_000;
+const WIKIDOT_TOKEN_PATTERN = /(?:^|[\r\n])set-cookie:\s*[^\r\n]*?wikidot_token7=([a-f0-9]+)/i;
+
+interface IncludeBridgeRequest {
+    id?: string;
+    url?: string;
+    method?: 'GET' | 'POST';
+    data?: string;
+}
+
+function isAllowedIncludeUrl(value: string): boolean {
+    try {
+        const url = new URL(value);
+        if (url.protocol !== 'https:' || !/^[a-z0-9-]+\.wikidot\.com$/i.test(url.hostname)) {
+            return false;
+        }
+        if (url.search || url.hash) {
+            return false;
+        }
+        // 允许目标站首页（用于获取 wikidot_token7）、单层页面路径及 AMC 端点。
+        return /^\/$|^\/(?:ajax-module-connector\.php|[^/][^?#]*)$/.test(url.pathname);
+    } catch {
+        return false;
+    }
+}
+
+function installIncludeRequestBridge(): void {
+    window.addEventListener(INCLUDE_REQUEST_EVENT, (event: Event) => {
+        const detail = (event as CustomEvent<IncludeBridgeRequest>).detail;
+        if (!detail?.id || !/^[a-z0-9-]+$/i.test(detail.id) || !detail.url || !isAllowedIncludeUrl(detail.url)) {
+            console.error('[Wikidot Editor Better][include bridge] 请求被安全规则拒绝', { id: detail?.id, url: detail?.url, method: detail?.method });
+            return;
+        }
+        const method = detail.method === 'POST' ? 'POST' : 'GET';
+        if (method === 'POST' && (!detail.data || !/^moduleName=viewsource%2FViewSourceModule&page_id=\d+&wikidot_token7=[a-f0-9]+$/i.test(detail.data))) {
+            console.error('[Wikidot Editor Better][include bridge] POST 请求体被安全规则拒绝', { id: detail.id, url: detail.url });
+            return;
+        }
+
+        console.debug('[Wikidot Editor Better][include bridge] 发起 GM 请求', { id: detail.id, method, url: detail.url });
+        const token = method === 'POST'
+            ? /(?:^|&)wikidot_token7=([a-f0-9]+)$/i.exec(detail.data!)?.[1]
+            : undefined;
+        const respond = (ok: boolean, text = '', debug = '', headers = '', token?: string) => {
+            const tokenFromHeader = token || WIKIDOT_TOKEN_PATTERN.exec(headers)?.[1];
+            window.dispatchEvent(new CustomEvent(INCLUDE_RESPONSE_EVENT, {
+                detail: { id: detail.id, ok, text: text.slice(0, MAX_INCLUDE_RESPONSE_LENGTH), debug, headers, token: tokenFromHeader },
+            }));
+        };
+        if (!window.GM_xmlhttpRequest) {
+            console.error('[Wikidot Editor Better][include bridge] GM_xmlhttpRequest 不可用');
+            respond(false, '', 'GM_xmlhttpRequest 不可用');
+            return;
+        }
+        window.GM_xmlhttpRequest({
+            method,
+            url: detail.url,
+            headers: method === 'POST' ? {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                ...(token ? { Cookie: 'wikidot_token7=' + token } : {}),
+            } : undefined,
+            data: method === 'POST' ? detail.data : undefined,
+            // GM 请求不保证跨域请求之间共享 cookie jar。ViewSourceModule 需要
+            // 表单字段与 cookie 中的 wikidot_token7 一致，因此仅为已通过
+            // 白名单校验的 AMC POST 显式携带这个短期 token。
+            timeout: 10_000,
+            onload: (response) => {
+                const ok = response.status >= 200 && response.status < 400;
+                const diagnostic = 'HTTP ' + response.status + '，响应 ' + response.responseText.length + ' 字符';
+                const headerToken = WIKIDOT_TOKEN_PATTERN.exec(response.responseHeaders)?.[1];
+                const finish = (cookieToken?: string) => {
+                    console.log('[Wikidot Editor Better][include bridge] GM 请求完成', { id: detail.id, method, url: detail.url, ok, status: response.status, responseLength: response.responseText.length, tokenFoundInHeaders: Boolean(headerToken), tokenFoundInCookieStore: Boolean(cookieToken) });
+                    respond(ok, response.responseText, diagnostic, response.responseHeaders, cookieToken || headerToken);
+                };
+                // Chromium 不会把 Set-Cookie 暴露给 responseHeaders。让 Tampermonkey
+                // 从自己的 cookie 存储读取刚由此站写入的 token。
+                if (method === 'GET' && !headerToken && window.GM_cookie) {
+                    window.GM_cookie.list({ url: detail.url!, name: 'wikidot_token7' }, (cookies) => {
+                        finish(cookies.find((cookie) => cookie.name === 'wikidot_token7')?.value);
+                    });
+                    return;
+                }
+                finish(headerToken);
+            },
+            onerror: (response) => {
+                const diagnostic = '网络错误' + (response.status ? '（HTTP ' + response.status + '）' : '');
+                console.error('[Wikidot Editor Better][include bridge] GM 请求网络错误', { id: detail.id, method, url: detail.url, status: response.status, statusText: response.statusText });
+                respond(false, '', diagnostic);
+            },
+            ontimeout: () => {
+                console.error('[Wikidot Editor Better][include bridge] GM 请求超时', { id: detail.id, method, url: detail.url });
+                respond(false, '', 'GM 请求超时（10 秒）');
+            },
+        });
+    });
+}
+
 function normalizeConfig(value: unknown): EditorBetterConfig {
     if (typeof value !== 'object' || value === null) {
         return DEFAULT_CONFIG;
@@ -96,6 +195,7 @@ function openSettings(): void {
     }
 
     window.GM_registerMenuCommand?.('Wikidot Editor Better 设置', openSettings);
+    installIncludeRequestBridge();
     const config = await getConfig();
 
     try {

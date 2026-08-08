@@ -1,5 +1,82 @@
 import { WIKIDOT_LANGUAGE_ID } from './constants';
 
+export interface WikidotBlockSymbol {
+    name: string;
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+    children: WikidotBlockSymbol[];
+}
+
+interface OpenBlock extends WikidotBlockSymbol {
+    normalizedName: string;
+}
+
+const HTML_VOID_ELEMENTS = new Set([
+    'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr',
+]);
+
+function normalizeBlockName(name: string): string {
+    return name.replace(/_+$/, '').toLowerCase();
+}
+
+/**
+ * 找出成对 Wikidot 块标签，以及 [[html]] 内的成对 HTML 标签，供 Monaco
+ * Sticky Scroll 使用。未闭合或不匹配的标签不会成为符号，避免 include 等
+ * 单行指令误入驻留栏。
+ */
+export function parseWikidotBlockSymbols(source: string): WikidotBlockSymbol[] {
+    const roots: WikidotBlockSymbol[] = [];
+    const stack: OpenBlock[] = [];
+    const lines = source.split(/\r?\n/);
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        const tagPattern = /\[\[\s*(\/)?\s*([A-Za-z][\w-]*_?)(?:\s[^\]]*)?\]\]|<\s*(\/)?\s*([A-Za-z][\w-]*)(?:\s[^<>]*?)?(\/?)\s*>/g;
+        let match: RegExpExecArray | null;
+        while ((match = tagPattern.exec(line))) {
+            const isWikidotTag = Boolean(match[2]);
+            const isInsideHtml = stack.some((block) => block.normalizedName === 'wiki:html');
+            if (!isWikidotTag && !isInsideHtml) continue;
+
+            const isClosing = Boolean(isWikidotTag ? match[1] : match[3]);
+            const rawName = isWikidotTag ? match[2] : match[4];
+            const normalizedName = (isWikidotTag ? 'wiki:' : 'html:') + normalizeBlockName(rawName);
+            const isSelfClosing = !isWikidotTag && (Boolean(match[5]) || HTML_VOID_ELEMENTS.has(rawName.toLowerCase()));
+            const startColumn = match.index + 1;
+            const endColumn = match.index + match[0].length + 1;
+
+            if (!isClosing && !isSelfClosing) {
+                stack.push({
+                    name: match[0],
+                    normalizedName,
+                    startLine: lineIndex + 1,
+                    startColumn,
+                    endLine: lineIndex + 1,
+                    endColumn,
+                    children: [],
+                });
+                continue;
+            }
+
+            if (!isClosing) continue;
+            const openIndex = stack.map((block) => block.normalizedName).lastIndexOf(normalizedName);
+            if (openIndex === -1) continue;
+
+            const [open] = stack.splice(openIndex, 1);
+            open.endLine = lineIndex + 1;
+            open.endColumn = endColumn;
+            delete (open as Partial<OpenBlock>).normalizedName;
+            const parent = stack[stack.length - 1];
+            if (parent) parent.children.push(open);
+            else roots.push(open);
+        }
+    }
+
+    return roots;
+}
+
 /**
  * Wikidot 语法的基础高亮（Monarch tokenizer）
  * 覆盖：标题 +/++/+++、粗体、斜体、删除线、下划线、[[...]] 模块、|| 表格、> 引用、@@ 原始文本等。
@@ -159,4 +236,28 @@ export function registerWikidotLanguage(monaco: any): void {
             { open: '(', close: ')' },
         ],
     } as any);
+
+    monaco.languages.registerDocumentSymbolProvider(WIKIDOT_LANGUAGE_ID, {
+        provideDocumentSymbols(model: any) {
+            const toSymbol = (block: WikidotBlockSymbol): any => ({
+                name: block.name,
+                detail: 'Wikidot 块标签',
+                kind: monaco.languages.SymbolKind.Namespace,
+                range: {
+                    startLineNumber: block.startLine,
+                    startColumn: block.startColumn,
+                    endLineNumber: block.endLine,
+                    endColumn: block.endColumn,
+                },
+                selectionRange: {
+                    startLineNumber: block.startLine,
+                    startColumn: block.startColumn,
+                    endLineNumber: block.startLine,
+                    endColumn: block.startColumn + block.name.length,
+                },
+                children: block.children.map(toSymbol),
+            });
+            return parseWikidotBlockSymbols(model.getValue()).map(toSymbol);
+        },
+    });
 }

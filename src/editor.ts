@@ -50,6 +50,7 @@ import {
     X,
 } from 'lucide';
 import { registerWikidotLanguage } from './wikidotLanguage';
+import { validateIncludes } from './includeValidator';
 import { log, logError } from './utils';
 
 /**
@@ -172,6 +173,11 @@ const EDITOR_STYLES = `
 #wikidot-monaco-container[data-wm-theme="light"] { border-color: #d0d0d0; box-shadow: 0 2px 10px rgba(0, 0, 0, .08); }
 #wikidot-monaco-status[data-wm-theme="light"] { color: #666; background: #f4f4f4; border-color: #d0d0d0; }
 #wikidot-monaco-status[data-wm-theme="light"] span:last-child { color: #2e7d32; }
+#wikidot-monaco-container .monaco-hover,
+.monaco-editor .monaco-hover {
+    box-sizing: border-box;
+    max-width: min(480px, calc(100vw - 24px));
+}
 #edit-page-form[data-wm-theme="light"] .change-textarea-size a { color: #444; background: #ffffff; border-color: #c8c8c8; }
 #edit-page-form[data-wm-theme="light"] .change-textarea-size a:hover { background-color: #f0f0f0; color: #111; }
 #edit-page-form[data-wm-theme="light"] #edit-page-title,
@@ -825,8 +831,13 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
             renderLineHighlight: 'line',
             lineNumbersMinChars: 3,
             folding: true,
+            stickyScroll: { enabled: true, maxLineCount: 5 },
             bracketPairColorization: { enabled: true },
             contextmenu: true,
+            // The editor container intentionally clips layout overflow. Keep Monaco's
+            // diagnostic hovers in its fixed viewport layer so they are not clipped
+            // when a marker is close to the editor edge.
+            fixedOverflowWidgets: true,
             multiCursorModifier: 'ctrlCmd',
             placeholder: '输入 wikidot 源代码…',
             // 禁用自动补全弹层：输入时的大列表 DOM 在页面环境（扩展/旧站 CSS）下
@@ -873,6 +884,26 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
         }
         posEl.textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
     });
+    let includeValidationTimer: number | null = null;
+    let includeValidationRun = 0;
+    const scheduleIncludeValidation = () => {
+        includeValidationRun++;
+        if (isMinimalMode) {
+            return;
+        }
+        if (includeValidationTimer !== null) {
+            window.clearTimeout(includeValidationTimer);
+        }
+        includeValidationTimer = window.setTimeout(() => {
+            includeValidationTimer = null;
+            const run = includeValidationRun;
+            void validateIncludes(monaco, state.model).catch((error: unknown) => {
+                if (run === includeValidationRun) {
+                    logError('include 校验失败:', error);
+                }
+            });
+        }, 1200);
+    };
     let contentChangeCount = 0;
     editor.onDidChangeModelContent(() => {
         contentChangeCount++;
@@ -885,9 +916,11 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
         if (isMinimalMode) {
             textarea.value = state.model.getValue();
         }
+        scheduleIncludeValidation();
     });
 
     log(`文档大小: ${state.model.getValueLength()} 字符`);
+    scheduleIncludeValidation();
 
     // ---------- 3. 安装 textarea 属性代理 ----------
     if (!isMinimalMode) {
@@ -1086,6 +1119,11 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
         if (layoutTimer !== null) {
             window.clearTimeout(layoutTimer);
         }
+        if (includeValidationTimer !== null) {
+            window.clearTimeout(includeValidationTimer);
+        }
+        includeValidationRun++;
+        monaco.editor.setModelMarkers(state.model, 'wikidot-include-validator', []);
         restoreFontSizeControls.forEach((restoreControl) => restoreControl());
         try {
             if (originalValue) {

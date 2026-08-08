@@ -1,12 +1,12 @@
 {
   "name": "wikidot-editor-better",
-  "version": "1.0.2-beta3",
+  "version": "1.0.2-beta4",
   "packageManager": "bun@1.2.0",
   "description": "将 Wikidot 编辑器的 textarea 替换为 Monaco Editor 的油猴脚本",
   "main": "dist/wikidot-editor-better.user.js",
   "userscript": {
     "name": "Wikidot Editor Better (Monaco)",
-    "namespace": "https://wikidot.com/",
+    "namespace": "https://github.com/SuperUseryjh/wikidot-editor-better",
     "description": "将 Wikidot 页面的源代码编辑区域替换为 Monaco Editor，并保持原工具栏按钮、快捷键、表单提交全部可用。",
     "author": "YaoOnion",
     "icon": "USE_PNG_GENERATE",
@@ -19,12 +19,14 @@
       "GM_getValue",
       "GM_setValue",
       "GM_registerMenuCommand",
+      "GM_cookie",
       "GM_xmlhttpRequest",
       "GM_openInTab",
       "GM_notification"
     ],
     "connect": [
-      "static.yaoonion.fun"
+      "static.yaoonion.fun",
+      "*"
     ],
     "run-at": "document-start"
   },

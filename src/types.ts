@@ -17,6 +17,9 @@ declare global {
         YAHOO?: any;
         // Tampermonkey API（在注入器/隔离世界上下文中可用）
         GM_xmlhttpRequest?: (details: GMXmlHttpRequestDetails) => void;
+        GM_cookie?: {
+            list: (details: { url: string; name?: string }, callback: (cookies: GMCookie[]) => void) => void;
+        };
         GM_openInTab?: (url: string, open_in_background?: boolean) => Window | null;
         GM_notification?: (details: GMNotificationDetails) => void;
         GM_info?: { script: { version: string } };
@@ -24,6 +27,12 @@ declare global {
         GM_setValue?: <T>(key: string, value: T) => void | Promise<void>;
         GM_registerMenuCommand?: (caption: string, commandFunc: () => void) => void;
     }
+}
+
+/** Tampermonkey GM_cookie 返回的最小 cookie 结构。 */
+export interface GMCookie {
+    name: string;
+    value: string;
 }
 
 /** GM_xmlhttpRequest 请求参数（仅声明本脚本用到的字段） */

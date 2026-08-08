@@ -17,6 +17,7 @@ describe('Monaco loader state', () => {
                 editor: { create: () => undefined },
                 KeyCode: {},
                 KeyMod: {},
+                MarkerSeverity: { Error: 8, Warning: 4, Info: 2 },
                 Selection: class {},
                 languages: {},
             },
@@ -29,6 +30,7 @@ describe('Monaco loader state', () => {
         const monaco = await loader.loadMonaco();
 
         expect(monaco.editor).toBe(pageWindow.monaco.editor);
+        expect(monaco.MarkerSeverity).toBe(pageWindow.monaco.MarkerSeverity);
         expect(loader.monacoLoading()).toBeFalse();
         expect(loader.monacoReady()).toBeTrue();
         expect(pageWindow.require).toBe(require);

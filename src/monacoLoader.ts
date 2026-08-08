@@ -65,8 +65,30 @@ function isMonacoRequire(): boolean {
     );
 }
 
-function pageHasAmdGlobals(): boolean {
-    return typeof window.require === 'function' || typeof window.define === 'function';
+interface GlobalPropertySnapshot {
+    name: 'require' | 'define' | 'AMDLoader';
+    descriptor?: PropertyDescriptor;
+}
+
+function snapshotAmdGlobals(): GlobalPropertySnapshot[] {
+    return ['require', 'define', 'AMDLoader'].map((name) => ({
+        name: name as GlobalPropertySnapshot['name'],
+        descriptor: Object.getOwnPropertyDescriptor(window, name),
+    }));
+}
+
+function restoreAmdGlobals(snapshots: GlobalPropertySnapshot[]): void {
+    for (const { name, descriptor } of snapshots) {
+        try {
+            if (descriptor) {
+                Object.defineProperty(window, name, descriptor);
+            } else {
+                delete (window as any)[name];
+            }
+        } catch (error) {
+            logError('恢复页面 AMD 全局变量失败:', name, error);
+        }
+    }
 }
 
 /**
@@ -80,6 +102,7 @@ function normalizeMonaco(api: any): any {
     merged.KeyCode = merged.KeyCode ?? ns.KeyCode ?? api.KeyCode;
     merged.KeyMod = merged.KeyMod ?? ns.KeyMod ?? api.KeyMod;
     merged.Selection = merged.Selection ?? ns.Selection ?? api.Selection;
+    merged.MarkerSeverity = merged.MarkerSeverity ?? ns.MarkerSeverity ?? api.MarkerSeverity;
     merged.languages = merged.languages ?? ns.languages ?? api.languages;
     return merged;
 }
@@ -156,10 +179,16 @@ function forceCleanGlobals(): string {
         Object.defineProperty(window, 'define', { writable: true, configurable: true });
     } catch { /* ignore */ }
     try {
+        Object.defineProperty(window, 'AMDLoader', { writable: true, configurable: true });
+    } catch { /* ignore */ }
+    try {
         (window as any).require = undefined;
     } catch { /* ignore */ }
     try {
         (window as any).define = undefined;
+    } catch { /* ignore */ }
+    try {
+        (window as any).AMDLoader = undefined;
     } catch { /* ignore */ }
     return info.join('; ');
 }
@@ -194,13 +223,8 @@ async function tryLoadEsm(base: string): Promise<any> {
 }
 
 /** AMD 方式：在已探测到 loader 源码后执行单路初始化 */
-async function tryLoadAmd(base: string, loaderCode?: string): Promise<any> {
+async function loadAmdInTemporaryGlobals(base: string, loaderCode?: string): Promise<any> {
     const loaderUrl = `${base}/min/vs/loader.js`;
-
-    // 若全局已是可用的 Monaco AMD require，直接用
-    if (pageHasAmdGlobals()) {
-        throw new Error('Page already has an AMD loader; skipping Monaco AMD initialization');
-    }
 
     let code = loaderCode;
     if (!code) {
@@ -240,6 +264,16 @@ async function tryLoadAmd(base: string, loaderCode?: string): Promise<any> {
     }
     lastMode = 'amd';
     return loadAmdModules(base);
+}
+
+async function tryLoadAmd(base: string, loaderCode?: string): Promise<any> {
+    const snapshots = snapshotAmdGlobals();
+    forceCleanGlobals();
+    try {
+        return await loadAmdInTemporaryGlobals(base, loaderCode);
+    } finally {
+        restoreAmdGlobals(snapshots);
+    }
 }
 
 /** 用当前全局 AMD require 加载 Monaco 编辑器主体 */
@@ -312,21 +346,6 @@ async function doLoadMonaco(): Promise<any> {
     if (window.monaco?.editor) {
         return normalizeMonaco(window.monaco);
     }
-    if (pageHasAmdGlobals()) {
-        monacoFallbackActive = true;
-        monacoLoadStageListener?.('fallback');
-        for (const base of ESM_CDNS) {
-            try {
-                const monaco = await tryLoadEsm(base);
-                monacoFallbackActive = false;
-                return monaco;
-            } catch (e) {
-                logError(`ESM load failed (${base}):`, e);
-            }
-        }
-        throw new Error('Page already has an AMD loader and all ESM Monaco CDNs failed');
-    }
-
     const primary = AMD_CDNS.slice(0, AMD_PRIMARY_COUNT);
     try {
         const winner = await firstSuccess(primary.map(probeAmdCdn));
