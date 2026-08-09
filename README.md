@@ -17,8 +17,6 @@
 
 将 [Wikidot](https://www.wikidot.com/) 页面源代码编辑区域的 `textarea` 替换为 [Monaco Editor](https://microsoft.github.io/monaco-editor/)（VS Code 同款编辑器）的 Tampermonkey 油猴脚本。原工具栏按钮、快捷键、表单提交全部保持可用。
 
-将 [Wikidot](https://www.wikidot.com/) 页面源代码编辑区域的 `textarea` 替换为 [Monaco Editor](https://microsoft.github.io/monaco-editor/)（VS Code 同款编辑器）的 Tampermonkey 油猴脚本。原工具栏按钮、快捷键、表单提交全部保持可用。
-
 此项目又名 FuckiDot Editor。
 
 ## 安装入口
