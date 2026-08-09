@@ -109,7 +109,7 @@ scripts/
 
 ## 友情链接
 
-- [Linux DO](linux.do)
+- [Linux DO](https://linux.do)
 
 ## License
 
