@@ -107,6 +107,10 @@ scripts/
 - 标准版本号（`x.y.z`）：每 24 小时检查一次
 - 预发布版本号（如 `1.0.0-alpha1`）：每 1 小时检查一次
 
+## 友情链接
+
+- [Linux DO](linux.do)
+
 ## License
 
 GNU GPL v3.0
