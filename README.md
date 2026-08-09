@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./landing/assets/logo.svg" width="160" alt="Wikidot Editor Better logo">
+  <img src="./assets/logo.svg" width="160" alt="Wikidot Editor Better logo">
 </p>
 
 <h1 align="center">Wikidot Editor Better</h1>
@@ -115,4 +115,10 @@ GNU GPL v3.0
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=SuperUseryjh/wikidot-editor-better&type=Date)](https://www.star-history.com/#SuperUseryjh/wikidot-editor-better&Date)
+<a href="https://www.star-history.com/?repos=SuperUseryjh%2Fwikidot-editor-better&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=SuperUseryjh/wikidot-editor-better&type=date&theme=dark&legend=top-left&sealed_token=jSUJ2OjztYQyZ4c84I4pb8eGAdQ889KPESwQVMqcVRhF07C2SCi1CspaZOCzHgoTj9fC66thdej58mQpRvdb6xpg6e-Y5rXReUToeB99oTwMBa1veWJ_0TMycOtw2EseMLWfHdUPA5_N0u5eI81uQHBbcoLLUGWKWqxESFZFXQiYQBGMUnroW64Vprni" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=SuperUseryjh/wikidot-editor-better&type=date&legend=top-left&sealed_token=jSUJ2OjztYQyZ4c84I4pb8eGAdQ889KPESwQVMqcVRhF07C2SCi1CspaZOCzHgoTj9fC66thdej58mQpRvdb6xpg6e-Y5rXReUToeB99oTwMBa1veWJ_0TMycOtw2EseMLWfHdUPA5_N0u5eI81uQHBbcoLLUGWKWqxESFZFXQiYQBGMUnroW64Vprni" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=SuperUseryjh/wikidot-editor-better&type=date&legend=top-left&sealed_token=jSUJ2OjztYQyZ4c84I4pb8eGAdQ889KPESwQVMqcVRhF07C2SCi1CspaZOCzHgoTj9fC66thdej58mQpRvdb6xpg6e-Y5rXReUToeB99oTwMBa1veWJ_0TMycOtw2EseMLWfHdUPA5_N0u5eI81uQHBbcoLLUGWKWqxESFZFXQiYQBGMUnroW64Vprni" />
+ </picture>
+</a>
