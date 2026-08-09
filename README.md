@@ -109,7 +109,12 @@ scripts/
 
 ## 友情链接
 
-- [Linux DO](https://linux.do)
+请注意，Chrome Extension 已从当前项目分叉，独立维护。
+
+Chrome Extension 版本号已经更改为 2.x.x 格式。
+
+- [Chrome Extension 落地页](https://chrome.fuckidot-editor.yaoonion.fun)
+- [Chrome Extension 版本仓库](https://github.com/SuperUseryjh/wikidot-editor-better-chrome-ext)
 
 ## License
 
