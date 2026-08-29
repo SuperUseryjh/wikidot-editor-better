@@ -1,35 +1,29 @@
 # Release Notes
 
-你好，这里是 Wikidot Editor Better / FuckiDot Editor 的 version 1.0.2 正式版发布说明。
+你好，这里是 Wikidot Editor Better 的 version 1.0.3 发布说明。
 
-## 编辑页体验
+## 设置面板
 
-- 新增完整编辑页覆写：工具栏、编辑器容器、状态栏、表单、锁定提示与操作按钮统一为现代化明暗主题界面。
-- 工具栏改用 Lucide 图标库与 CSS mask 渲染，兼容 Wikidot 异步插入的工具项及标题子菜单。
-- 底部操作按钮使用图标代理按钮和加载状态；“显示变更”采用 VS Code 风格 diff 外观，并支持深色模式。
-- 统一 Wikidot hovertip 的明暗主题与层叠优先级；工具栏编辑操作可进入 Monaco 撤销栈，列表续行功能也已修复。
-
-## 配置与加载稳定性
-
-- 新增油猴菜单设置页，可按需关闭完整编辑页覆写，同时保留 Monaco 对原生 textarea 的替换。
-- 改进 Monaco 多 CDN 加载、回退提示与 AMD 隔离恢复机制，避免覆盖页面已有的 AMD 全局变量，并修复加载状态与回滚恢复问题。
-- 修复 Monaco 诊断提示在编辑器边缘被裁切的问题。
+- 新增多项可配置项：主题（跟随系统/亮色/暗色）、字体大小、显示行号、小地图、高亮当前行、自动换行、Tab 宽度、缩进用空格、代码折叠、括号配对着色、自动补全、Sticky Scroll 开关与保留行数、可滚动过最后一行。
+- 编辑器状态栏新增「设置」按钮，点击即可打开设置面板；原油猴菜单入口保留。
+- 设置统一存储，字号与编辑页字号按钮共用同一份本地存储。
 
 ## Include 校验
 
-- 新增 [[include ...]] 调用检查：识别参数格式、重复参数、被 include 页面不存在，以及模板参数缺失或未使用。
-- 支持当前站点与跨站 include，正确解析 :页面、站点:页面 与包含额外冒号的页面名。
-- 跨站读取模板源码使用 Tampermonkey 请求桥、站点 token 与 ViewSourceModule，并为成功结果增加当前编辑页会话内的 10 分钟缓存。
+- 修正站内/站外引用判定：仅 `:站点名:页面名` 视为跨站引用，不以冒号开头的（如 `component:image-block`）一律视为当前站点内引用。
+- 调整校验日志级别，避免编辑过程中刷屏。
 
-## 代码结构驻留
+## 语法高亮
 
-- 启用 Sticky Scroll，最多驻留 5 行；支持成对 Wikidot 标签、[[html]] 内嵌套的 HTML 标签，以及 [[module CSS]]。
+- 细化 `[[module ...]]` 标签解析：分别高亮模块名、属性名、引号与无引号属性值。
+- 支持 `_data-form-field-name` 这类下划线开头的属性名。
 
-## 脚本与资源
+## 性能与结构
 
-- 使用 SVG 项目 logo，并在构建 userscript 时自动生成 PNG Data URL 图标。
-- 更新 userscript 元数据，补充跨站源码读取所需的 GM_cookie、GM_xmlhttpRequest 与连接权限。
+- 优化 Wikidot 块标签识别中的 html 嵌套判断，避免大文档下的重复栈遍历。
+- Monaco CDN 地址复用统一版本常量，升级版本时不再遗漏。
+- 抽取存储封装（settingsStore）与平台能力封装（platform），为油猴与 Chrome 双端同步降低代码差异。
 
 ## 测试
 
-- 扩充 Monaco 加载、include 解析、图标生成与 Wikidot 块标签识别的自动化覆盖。
+- 补充 include 站内/站外引用解析测试。

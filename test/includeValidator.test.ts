@@ -53,11 +53,18 @@ describe('parseIncludeDirectives', () => {
             origin: 'https://scp-wiki.wikidot.com',
             remote: true,
         });
-        expect(parseIncludeTarget('maa-sandbox:open:uo-010', 'https://example.wikidot.com')).toEqual({
-            page: 'open:uo-010',
-            origin: 'https://maa-sandbox.wikidot.com',
-            remote: true,
+        // 站内引用：不以冒号开头，页面名中的冒号属于 fullname，不能拆成站点名
+        expect(parseIncludeTarget('component:image-block', 'https://example.wikidot.com')).toEqual({
+            page: 'component:image-block',
+            origin: 'https://example.wikidot.com',
+            remote: false,
         });
+        expect(parseIncludeTarget('maa-sandbox:open:uo-010', 'https://example.wikidot.com')).toEqual({
+            page: 'maa-sandbox:open:uo-010',
+            origin: 'https://example.wikidot.com',
+            remote: false,
+        });
+        // 站外引用：以冒号开头，形如 :站点名:页面名
         expect(parseIncludeTarget(':maa-sandbox:open:uo-010', 'https://example.wikidot.com')).toEqual({
             page: 'open:uo-010',
             origin: 'https://maa-sandbox.wikidot.com',
@@ -67,7 +74,7 @@ describe('parseIncludeDirectives', () => {
     });
 
     test('keeps page-name colons in the cross-site source target', () => {
-        const target = parseIncludeTarget('maa-sandbox:open:uo-010', 'https://example.wikidot.com');
+        const target = parseIncludeTarget(':maa-sandbox:open:uo-010', 'https://example.wikidot.com');
         expect(target?.origin + '/edit:true/page:' + encodeURIComponent(target.page).replace(/%3A/gi, ':')).toBe(
             'https://maa-sandbox.wikidot.com/edit:true/page:open:uo-010'
         );

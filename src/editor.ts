@@ -5,11 +5,9 @@ import {
     MONACO_ERROR_ID,
     EDITOR_STYLE_ID,
     WIKIDOT_LANGUAGE_ID,
-    FONT_SIZE_KEY,
-    DEFAULT_FONT_SIZE,
-    MIN_FONT_SIZE,
-    MAX_FONT_SIZE,
+    OPEN_SETTINGS_EVENT,
 } from './constants';
+import { loadFontSize, saveFontSize } from './settingsStore';
 import {
     Bold,
     BookOpen,
@@ -114,6 +112,17 @@ const EDITOR_STYLES = `
 #wikidot-monaco-container { width: 95%; height: 65vh; min-height: 300px; overflow: hidden; border: 1px solid; border-top: none; border-radius: 0; }
 #wikidot-monaco-status { width: 95%; display: flex; justify-content: space-between; gap: 12px; box-sizing: border-box; font: 12px/1.6 sans-serif; border: 1px solid; border-top: none; border-radius: 0 0 10px 10px; padding: 3px 10px; }
 #wikidot-monaco-status span:last-child { font-weight: 600; }
+#wikidot-monaco-status .wikidot-monaco-settings-button {
+    margin-left: 8px;
+    padding: 1px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #fff;
+    color: #334155;
+    font: 400 12px/1.6 sans-serif;
+    cursor: pointer;
+}
+#wikidot-monaco-status .wikidot-monaco-settings-button:hover { background: #e8eef6; color: #0f4c81; }
 
 /* ---- 字号按钮 / 底部按钮（通用） ---- */
 #edit-page-form.wikidot-monaco-edit-page .change-textarea-size { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
@@ -149,6 +158,8 @@ const EDITOR_STYLES = `
 #wikidot-monaco-container[data-wm-theme="dark"] { border-color: #3a3a40; box-shadow: 0 4px 16px rgba(0, 0, 0, .35); }
 #wikidot-monaco-status[data-wm-theme="dark"] { color: #a9a9b0; background: #1e1e22; border-color: #3a3a40; }
 #wikidot-monaco-status[data-wm-theme="dark"] span:last-child { color: #6a9955; }
+#wikidot-monaco-status[data-wm-theme="dark"] .wikidot-monaco-settings-button { border-color: #424b58; background: #282d35; color: #d4d8e0; }
+#wikidot-monaco-status[data-wm-theme="dark"] .wikidot-monaco-settings-button:hover { background: #303945; color: #fff; }
 #edit-page-form[data-wm-theme="dark"] .change-textarea-size a { color: #d4d4d4; background: #2b2b30; border-color: #3a3a40; }
 #edit-page-form[data-wm-theme="dark"] .change-textarea-size a:hover { background-color: #3c3c43; color: #ffffff; }
 #edit-page-form[data-wm-theme="dark"] #edit-page-title,
@@ -707,15 +718,6 @@ function callWikiButton(fn: (...args: any[]) => void): void {
     }
 }
 
-function clampFontSize(size: number): number {
-    return Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, size));
-}
-
-function getFontSize(): number {
-    const saved = parseInt(localStorage.getItem(FONT_SIZE_KEY) || '', 10);
-    return isNaN(saved) ? DEFAULT_FONT_SIZE : clampFontSize(saved);
-}
-
 export function clearMonacoError(textarea: HTMLTextAreaElement): void {
     textarea.parentElement?.querySelector(`#${MONACO_ERROR_ID}`)?.remove();
 }
@@ -765,12 +767,17 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
         registerWikidotLanguage(monaco);
     }
 
-    // 主题跟随系统深浅色；编辑区外框配色也据此切换
-    const isDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    // 读取注入器下发到主世界的配置；缺省时沿用与旧版一致的默认值
+    const config = (window as any).__wikidotEditorBetterConfig ?? {};
+
+    // 主题默认跟随系统深浅色，可在设置面板中覆盖；编辑区外框配色也据此切换
+    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    const isDark = config.theme === 'dark' || (config.theme !== 'light' && prefersDark);
     const wmTheme = isDark ? 'dark' : 'light';
+    const monacoTheme = isDark ? 'vs-dark' : 'vs';
     const form = textarea.closest('form');
     const actionArea = form?.closest('#action-area');
-    const fullOverride = (window as any).__wikidotEditorBetterConfig?.editorOverrideEnabled !== false;
+    const fullOverride = config.editorOverrideEnabled !== false;
 
     // ---------- 1. 创建容器并插入到 textarea 之前 ----------
     injectEditorStyles(fullOverride);
@@ -782,7 +789,17 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
     const statusBar = document.createElement('div');
     statusBar.id = MONACO_STATUS_ID;
     statusBar.setAttribute('data-wm-theme', wmTheme);
-    statusBar.innerHTML = `<span id="${MONACO_STATUS_ID}-pos">Ln 1, Col 1</span><span>Wikidot · Monaco</span>`;
+    statusBar.innerHTML = `<span id="${MONACO_STATUS_ID}-pos">Ln 1, Col 1</span><span id="${MONACO_STATUS_ID}-brand">Wikidot · Monaco</span>`;
+    const statusBrand = statusBar.querySelector(`#${MONACO_STATUS_ID}-brand`) as HTMLElement;
+    const settingsButton = document.createElement('button');
+    settingsButton.type = 'button';
+    settingsButton.className = 'wikidot-monaco-settings-button';
+    settingsButton.title = '打开设置';
+    settingsButton.textContent = '设置';
+    settingsButton.addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_EVENT));
+    });
+    statusBrand.appendChild(settingsButton);
     container.after(statusBar);
 
     // 编辑工具栏与编辑表单标记主题，使外框配色与 Monaco 一致
@@ -814,25 +831,26 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
         editor = monaco.editor.create(container, {
             value: state.cachedValue,
             language: isMinimalMode ? 'plaintext' : WIKIDOT_LANGUAGE_ID,
-            theme: isDark ? 'vs-dark' : 'vs',
+            theme: monacoTheme,
             // 不使用 automaticLayout：Monaco 内部 ResizeObserver 在页面布局抖动时可能陷入
             // 无限 layout 循环导致整页卡死，改为手动节流 layout
             automaticLayout: false,
             // 后台 tokenize 放到 Web Worker：避免大文档在主线程 tokenize
             // 占满事件循环导致页面无响应
             backgroundTokenization: true,
-            fontSize: getFontSize(),
-            tabSize: 4,
-            insertSpaces: true,
+            fontSize: loadFontSize(),
+            tabSize: config.tabSize ?? 4,
+            insertSpaces: config.insertSpaces !== false,
             detectIndentation: false,
-            wordWrap: 'off',
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            renderLineHighlight: 'line',
+            wordWrap: config.wordWrap ?? 'off',
+            minimap: { enabled: config.minimap === true },
+            scrollBeyondLastLine: config.scrollBeyondLastLine === true,
+            renderLineHighlight: config.renderLineHighlight ?? 'line',
+            lineNumbers: config.lineNumbers === false ? 'off' : 'on',
             lineNumbersMinChars: 3,
-            folding: true,
-            stickyScroll: { enabled: true, maxLineCount: 5 },
-            bracketPairColorization: { enabled: true },
+            folding: config.folding !== false,
+            stickyScroll: { enabled: config.stickyScroll !== false, maxLineCount: config.stickyScrollMaxLineCount ?? 5 },
+            bracketPairColorization: { enabled: config.bracketPairColorization !== false },
             contextmenu: true,
             // The editor container intentionally clips layout overflow. Keep Monaco's
             // diagnostic hovers in its fixed viewport layer so they are not clipped
@@ -840,9 +858,9 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
             fixedOverflowWidgets: true,
             multiCursorModifier: 'ctrlCmd',
             placeholder: '输入 wikidot 源代码…',
-            // 禁用自动补全弹层：输入时的大列表 DOM 在页面环境（扩展/旧站 CSS）下
-            // 容易触发主线程重活，本脚本定位是纯编辑器，不需要 suggest
-            suggest: { enabled: false },
+            // 自动补全弹层默认关闭；输入时的大列表 DOM 在页面环境（扩展/旧站 CSS）下
+            // 容易触发主线程重活，本脚本定位是纯编辑器
+            suggest: { enabled: config.suggest === true },
         });
     } catch (e) {
         logError('Monaco 编辑器创建失败:', e);
@@ -1087,8 +1105,7 @@ export async function setupEditor(monaco: any, textarea: HTMLTextAreaElement): P
 
     // ---------- 5. 原 textarea 的行数 + / - 按钮改为调整 Monaco 字号 ----------
     const changeFontSize = (delta: number) => {
-        const next = clampFontSize(getFontSize() + delta);
-        localStorage.setItem(FONT_SIZE_KEY, String(next));
+        const next = saveFontSize(loadFontSize() + delta);
         editor.updateOptions({ fontSize: next });
         log(`字号已调整为 ${next}px`);
     };

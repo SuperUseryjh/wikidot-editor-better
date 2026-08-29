@@ -1,3 +1,5 @@
+import { INCLUDE_REQUEST_EVENT, INCLUDE_RESPONSE_EVENT } from './constants';
+
 export interface IncludeParameter {
     name: string;
     value: string;
@@ -45,8 +47,6 @@ const PARAMETER_REFERENCE_PATTERN = /\{\$([\p{L}_][\p{L}\p{N}_-]*)\}/gu;
 const SOURCE_TEXTAREA_PATTERN = /<textarea\b[^>]*\bid=["']edit-page-textarea["'][^>]*>([\s\S]*?)<\/textarea>/i;
 const ANY_TEXTAREA_PATTERN = /<textarea\b[^>]*>([\s\S]*?)<\/textarea>/i;
 const SOURCE_TIMEOUT = 10000;
-const INCLUDE_REQUEST_EVENT = 'wikidot-editor-better-include-request';
-const INCLUDE_RESPONSE_EVENT = 'wikidot-editor-better-include-response';
 const PAGE_VALIDATION_CACHE_TTL = 10 * 60 * 1000;
 let includeRequestSequence = 0;
 const pageValidationCache = new Map<string, { expiresAt: number; result: PageValidationResult }>();
@@ -57,7 +57,7 @@ function debug(...args: unknown[]): void {
 }
 
 function info(...args: unknown[]): void {
-    console.log('[Wikidot Editor Better][include]', ...args);
+    console.debug('[Wikidot Editor Better][include]', ...args);
 }
 
 function debugError(...args: unknown[]): void {
@@ -127,7 +127,13 @@ export function parseIncludeDirectives(source: string): IncludeDirective[] {
 }
 
 export function parseIncludeTarget(value: string, currentOrigin = window.location.origin): IncludeTarget | null {
-    const target = value.startsWith(':') ? value.slice(1) : value;
+    // 只有以冒号开头、形如 ":站点名:页面名" 的引用才是跨站引用。
+    // 不以冒号开头的一律视为当前站点内的页面引用，页面名本身可含冒号（如 component:image-block）。
+    if (!value.startsWith(':')) {
+        return value ? { page: value, origin: currentOrigin, remote: false } : null;
+    }
+
+    const target = value.slice(1);
     const separator = target.indexOf(':');
     if (separator === -1) {
         return target ? { page: target, origin: currentOrigin, remote: false } : null;

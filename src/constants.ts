@@ -20,6 +20,17 @@ export const MAX_FONT_SIZE = 30;
 export const WIKIDOT_LANGUAGE_ID = 'wikidot';
 
 /**
+ * 主世界状态栏设置按钮 → 注入器（隔离世界）打开设置面板的事件名。
+ */
+export const OPEN_SETTINGS_EVENT = 'wikidot-editor-better-open-settings';
+
+/**
+ * 主世界 include 校验 → 注入器（隔离世界）发起跨域请求的事件名。
+ */
+export const INCLUDE_REQUEST_EVENT = 'wikidot-editor-better-include-request';
+export const INCLUDE_RESPONSE_EVENT = 'wikidot-editor-better-include-response';
+
+/**
  * 更新检查（参考 ref 项目的自动更新机制）
  * 发布时 GitHub Actions 会把脚本与 package.json 推送到 SuperUseryjh/static 仓库的
  * wikidot-editor-better/pub（标准版本号）或 wikidot-editor-better/perv（预发布版本号）目录，

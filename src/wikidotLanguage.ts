@@ -29,6 +29,7 @@ function normalizeBlockName(name: string): string {
 export function parseWikidotBlockSymbols(source: string): WikidotBlockSymbol[] {
     const roots: WikidotBlockSymbol[] = [];
     const stack: OpenBlock[] = [];
+    let htmlDepth = 0;
     const lines = source.split(/\r?\n/);
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -37,7 +38,7 @@ export function parseWikidotBlockSymbols(source: string): WikidotBlockSymbol[] {
         let match: RegExpExecArray | null;
         while ((match = tagPattern.exec(line))) {
             const isWikidotTag = Boolean(match[2]);
-            const isInsideHtml = stack.some((block) => block.normalizedName === 'wiki:html');
+            const isInsideHtml = htmlDepth > 0;
             if (!isWikidotTag && !isInsideHtml) continue;
 
             const isClosing = Boolean(isWikidotTag ? match[1] : match[3]);
@@ -57,6 +58,7 @@ export function parseWikidotBlockSymbols(source: string): WikidotBlockSymbol[] {
                     endColumn,
                     children: [],
                 });
+                if (normalizedName === 'wiki:html') htmlDepth++;
                 continue;
             }
 
@@ -65,6 +67,7 @@ export function parseWikidotBlockSymbols(source: string): WikidotBlockSymbol[] {
             if (openIndex === -1) continue;
 
             const [open] = stack.splice(openIndex, 1);
+            if (normalizedName === 'wiki:html') htmlDepth--;
             open.endLine = lineIndex + 1;
             open.endColumn = endColumn;
             delete (open as Partial<OpenBlock>).normalizedName;
@@ -99,6 +102,9 @@ export function registerWikidotLanguage(monaco: any): void {
                 [/\[\[module\s+[cC][sS][sS]\s*\]\]/, { token: 'tag', next: '@css' }],
                 // html 模块 [[html]]...[[/html]]：进入 HTML 高亮状态
                 [/\[\[[hH][tT][mM][lL]\s*\]\]/, { token: 'tag', next: '@html' }],
+                // 通用 module 标签 [[module Name attr="value" ...]]：
+                // 进入 moduleTag 状态，分别高亮模块名与属性（CSS 模块已在上方单独处理）
+                [/\[\[module(?=[\s])/, { token: 'tag', next: '@moduleTag' }],
                 // 标题 + ++ +++（无捕获组，避免 Monarch "groups 不匹配" 报错）
                 [/^\s*\+{1,6}\s/, 'keyword.heading'],
                 // 水平线
@@ -166,6 +172,22 @@ export function registerWikidotLanguage(monaco: any): void {
                 [/"[^"]*"|'[^']*'/, 'string'],
                 // 值关键字
                 [/\b[a-zA-Z][\w-]*\b/, 'attribute.value'],
+            ],
+            // 通用 module 标签内部：模块名 + 属性
+            moduleTag: [
+                // 结束 ]]：回到根状态
+                [/\]\]/, { token: 'tag', next: '@pop' }],
+                // 属性名（后面跟 =；支持 _data-form-field-name 这类下划线开头）
+                [/[A-Za-z_][\w-]*(?=\s*=)/, 'attribute.name'],
+                // = 后进入 moduleValue 读取属性值（引号或裸值）
+                [/=/, { token: 'delimiter', next: '@moduleValue' }],
+                // 模块名（第一个词）
+                [/[A-Za-z][\w-]*/, 'type'],
+            ],
+            // module 属性值：引号字符串或裸值，读取后回到 moduleTag
+            moduleValue: [
+                [/"[^"]*"|'[^']*'/, { token: 'string', next: '@pop' }],
+                [/[^\s\]]+/, { token: 'attribute.value', next: '@pop' }],
             ],
             cssComment: [
                 [/\*\//, 'comment', '@pop'],

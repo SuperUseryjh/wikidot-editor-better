@@ -15,20 +15,20 @@ export function setMonacoLoadStageListener(listener: MonacoLoadStageListener | n
 
 /** AMD 单文件 CDN（前 AMD_PRIMARY_COUNT 个并行探测，其余按顺序兜底） */
 const AMD_CDNS = [
-    'https://cdn.bootcdn.net/ajax/libs/monaco-editor/0.52.2',
-    'https://cdn.staticfile.net/monaco-editor/0.52.2',
-    'https://fastly.jsdelivr.net/npm/monaco-editor@0.52.2',
-    'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2',
-    'https://unpkg.com/monaco-editor@0.52.2',
+    `https://cdn.bootcdn.net/ajax/libs/monaco-editor/${MONACO_VERSION}`,
+    `https://cdn.staticfile.net/monaco-editor/${MONACO_VERSION}`,
+    `https://fastly.jsdelivr.net/npm/monaco-editor@${MONACO_VERSION}`,
+    `https://cdn.jsdelivr.net/npm/monaco-editor@${MONACO_VERSION}`,
+    `https://unpkg.com/monaco-editor@${MONACO_VERSION}`,
 ];
 
 const AMD_PRIMARY_COUNT = 4;
 
 /** ESM 兜底源 */
 const ESM_CDNS = [
-    'https://unpkg.com/monaco-editor@0.52.2',
-    'https://fastly.jsdelivr.net/npm/monaco-editor@0.52.2',
-    'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2',
+    `https://unpkg.com/monaco-editor@${MONACO_VERSION}`,
+    `https://fastly.jsdelivr.net/npm/monaco-editor@${MONACO_VERSION}`,
+    `https://cdn.jsdelivr.net/npm/monaco-editor@${MONACO_VERSION}`,
 ];
 
 const AMD_TIMEOUT = 20000; // editor.main 约 5MB，下载受 CDN 链路速度波动，需给足时间
